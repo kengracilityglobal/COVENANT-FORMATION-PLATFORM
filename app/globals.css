@@ -1,0 +1,349 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Fonts import ──────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600&family=Cormorant:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&display=swap');
+
+/* ── CSS Variables ────────────────────────────────────────────── */
+:root {
+  /* Brand */
+  --gold:           #B8972A;
+  --gold-light:     #D4AA4A;
+  --gold-pale:      #FBF6EC;
+  --gold-muted:     #8A7340;
+
+  /* Backgrounds */
+  --bg-primary:     #0D0B08;
+  --bg-surface:     #141008;
+  --bg-card:        #1A1510;
+  --bg-elevated:    #221C12;
+  --bg-border:      #2A2218;
+
+  /* Text */
+  --text-primary:   #F5E6C0;
+  --text-secondary: #C4A96A;
+  --text-muted:     #8A7340;
+  --text-faint:     #4A3F2F;
+
+  /* Formation levels */
+  --christformed:      #2C5F2E;
+  --rooted: #4A7A4A;
+  --growing:  #B8972A;
+  --awakening:    #C47A1A;
+  --unengaged:   #8B2020;
+
+  /* Fonts */
+  --font-display: 'Cormorant Garamond', 'Georgia', serif;
+  --font-body:    'Georgia', 'Times New Roman', serif;
+}
+
+/* ── Base ─────────────────────────────────────────────────────── */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  line-height: 1.7;
+}
+
+/* ── Selection ────────────────────────────────────────────────── */
+::selection {
+  background-color: rgba(184, 151, 42, 0.25);
+  color: var(--text-primary);
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-card);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-muted);
+}
+
+/* ── Typography ───────────────────────────────────────────────── */
+.font-display {
+  font-family: var(--font-display);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+/* ── EIKON Component Classes ──────────────────────────────────── */
+
+.eikon-card {
+  background: var(--bg-card);
+  border: 1px solid var(--bg-border);
+  border-radius: 2px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.eikon-card:hover {
+  border-color: rgba(184, 151, 42, 0.3);
+}
+
+.eikon-card-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--bg-border);
+  border-radius: 2px;
+}
+
+.gold-rule {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--gold), transparent);
+  border: none;
+  margin: 2rem 0;
+}
+
+.gold-rule-left {
+  height: 1px;
+  background: linear-gradient(to right, var(--gold), transparent);
+  border: none;
+  margin: 1.5rem 0;
+}
+
+.pillar-number {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--gold-muted);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.scripture-block {
+  border-left: 2px solid var(--gold);
+  padding: 1rem 1.5rem;
+  margin: 1.5rem 0;
+  background: rgba(184, 151, 42, 0.04);
+}
+
+.scripture-block p {
+  font-style: italic;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem;
+}
+
+.scripture-block cite {
+  font-size: 0.85rem;
+  color: var(--gold);
+  font-style: normal;
+  font-weight: 600;
+  font-family: var(--font-display);
+}
+
+/* ── Formation level badges ───────────────────────────────────── */
+.badge-christformed      { background: rgba(44, 95, 46, 0.2);  color: #7ABF7C; border: 1px solid rgba(44, 95, 46, 0.4); }
+.badge-rooted { background: rgba(74, 122, 74, 0.2); color: #8FCC91; border: 1px solid rgba(74, 122, 74, 0.4); }
+.badge-growing  { background: rgba(184, 151, 42, 0.15); color: #D4AA4A; border: 1px solid rgba(184, 151, 42, 0.3); }
+.badge-awakening    { background: rgba(196, 122, 26, 0.15); color: #E0984A; border: 1px solid rgba(196, 122, 26, 0.3); }
+.badge-unengaged   { background: rgba(139, 32, 32, 0.2); color: #D47070; border: 1px solid rgba(139, 32, 32, 0.4); }
+
+/* ── Engagement tier indicators ───────────────────────────────── */
+.tier-on-track    { color: #7ABF7C; }
+.tier-declining   { color: #D4AA4A; }
+.tier-drift-event { color: #E0984A; }
+.tier-inactive    { color: #D47070; }
+
+/* ── Inputs ───────────────────────────────────────────────────── */
+.eikon-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--bg-border);
+  color: var(--text-primary);
+  border-radius: 2px;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  width: 100%;
+  transition: border-color 0.2s ease;
+  outline: none;
+}
+
+.eikon-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(184, 151, 42, 0.2);
+}
+
+.eikon-input::placeholder {
+  color: var(--text-faint);
+}
+
+.eikon-textarea {
+  resize: vertical;
+  min-height: 120px;
+  line-height: 1.8;
+}
+
+/* ── Buttons ──────────────────────────────────────────────────── */
+.btn-gold {
+  background: var(--gold);
+  color: var(--bg-primary);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 2rem;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.1s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-gold:hover {
+  background: var(--gold-light);
+  transform: translateY(-1px);
+}
+
+.btn-gold:active {
+  transform: translateY(0);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-weight: 500;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--bg-border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-ghost:hover {
+  border-color: var(--gold-muted);
+  color: var(--text-primary);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-weight: 600;
+  padding: 0.75rem 2rem;
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-outline:hover {
+  background: rgba(184, 151, 42, 0.1);
+}
+
+/* ── Progress ring ────────────────────────────────────────────── */
+.progress-ring {
+  transform: rotate(-90deg);
+}
+
+/* ── Radar chart ──────────────────────────────────────────────── */
+.radar-chart text {
+  font-family: var(--font-display);
+  fill: var(--text-muted);
+}
+
+/* ── Gradient text ────────────────────────────────────────────── */
+.text-gold-gradient {
+  background: linear-gradient(135deg, var(--gold), var(--gold-light), var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Page containers ──────────────────────────────────────────── */
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.page-container-wide {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* ── Prose ────────────────────────────────────────────────────── */
+.formation-prose {
+  line-height: 1.85;
+  color: var(--text-secondary);
+}
+
+.formation-prose p {
+  margin-bottom: 1.25rem;
+}
+
+.formation-prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Animations ───────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.7s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-delay-1 { animation-delay: 0.1s; opacity: 0; }
+.animate-delay-2 { animation-delay: 0.2s; opacity: 0; }
+.animate-delay-3 { animation-delay: 0.3s; opacity: 0; }
+.animate-delay-4 { animation-delay: 0.4s; opacity: 0; }
+.animate-delay-5 { animation-delay: 0.5s; opacity: 0; }
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-elevated) 50%, var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+  border-radius: 2px;
+}
+
+/* ── Focus visible ────────────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}

@@ -1,0 +1,19 @@
+{
+  "functions": {
+    "app/api/assessment/[assessmentId]/complete/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/report/[assessmentId]/html/route.ts": {
+      "maxDuration": 45
+    },
+    "app/api/report/portraits/route.ts": {
+      "maxDuration": 45
+    },
+    "app/api/report/portrait/route.ts": {
+      "maxDuration": 45
+    },
+    "app/api/emails/report-ready/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}
