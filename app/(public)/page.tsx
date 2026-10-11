@@ -74,7 +74,7 @@ export default function LandingPage() {
       </nav>
 
       {/* ── Hero ── */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-16">
+      <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-16">
 
         <div className="absolute inset-0" style={{
           background: 'radial-gradient(ellipse at 50% 55%, rgba(184,151,42,0.07) 0%, transparent 65%)',
@@ -84,7 +84,7 @@ export default function LandingPage() {
           backgroundSize: '80px 80px',
         }} />
 
-        <div className="relative page-container text-center py-32 max-w-5xl">
+        <div className="relative page-container w-full text-center py-16 md:py-20 max-w-5xl">
 
           <p className="pillar-number tracking-[0.4em] mb-8" style={{ color: 'var(--gold-muted)' }}>
             GOD&apos;S KINGDOM MALAK MINISTRIES
@@ -132,7 +132,7 @@ export default function LandingPage() {
 
         </div>
 
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2">
+        <div className="relative hidden [@media(min-height:820px)]:block pb-8">
           <div className="flex flex-col items-center gap-2" style={{ color: 'var(--text-faint)' }}>
             <span className="text-xs tracking-widest pillar-number">SCROLL</span>
             <div className="w-px h-12" style={{ background: 'linear-gradient(to bottom, var(--gold), transparent)' }} />
