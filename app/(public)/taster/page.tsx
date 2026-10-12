@@ -8,6 +8,20 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { scoreFrequency } from '@/lib/scoring/aggregate'
+
+// Same five labelled choices, and the same 1-5 -> 0/25/50/75/100 mapping, as the
+// real assessment (app/(participant)/assessment/page.tsx + lib/scoring/aggregate.ts),
+// so a taster result and the full assessment agree. No slider: a 0-100 drag implies
+// precision nobody has about "I keep promises when it's inconvenient", and a default
+// position records an answer the person never gave.
+const SCALE_LABELS = [
+  { value: 1, label: 'Never' },
+  { value: 2, label: 'Rarely' },
+  { value: 3, label: 'Sometimes' },
+  { value: 4, label: 'Often' },
+  { value: 5, label: 'Almost always' },
+]
 
 type Question = { id: string; pillar: string; text: string; low: string; high: string; invert?: boolean }
 
@@ -142,12 +156,13 @@ export default function TasterPage() {
   const [phase, setPhase] = useState<Phase>('intro')
   const [current, setCurrent] = useState(0)
   const [answers, setAnswers] = useState<Record<string, number>>({})
-  const [scaleValue, setScaleValue] = useState<number>(50)
+  const [selected, setSelected] = useState<number | null>(null)
 
   function handleNext() {
+    if (selected === null) return
     const q = QUESTIONS[current]
-    setAnswers(prev => ({ ...prev, [q.id]: scaleValue }))
-    setScaleValue(50)
+    setAnswers(prev => ({ ...prev, [q.id]: scoreFrequency(selected, false) }))
+    setSelected(null)
     if (current + 1 >= QUESTIONS.length) setPhase('result')
     else setCurrent(c => c + 1)
   }
@@ -345,26 +360,50 @@ export default function TasterPage() {
             {q.text}
           </p>
 
-          <div className="flex justify-between text-xs mb-3" style={{ color: 'var(--text-faint)' }}>
+          <div className="flex justify-between gap-6 text-xs mb-4" style={{ color: 'var(--text-faint)' }}>
             <span>{q.low}</span>
-            <span>{q.high}</span>
+            <span className="text-right">{q.high}</span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={scaleValue}
-            onChange={e => setScaleValue(Number(e.target.value))}
-            className="w-full mb-8"
-            style={{ accentColor: 'var(--gold)' }}
-          />
-          <div className="text-center mb-8">
-            <span className="font-display text-3xl font-bold" style={{ color: 'var(--gold)' }}>
-              {scaleValue}
-            </span>
-            <span className="text-xs ml-2" style={{ color: 'var(--text-faint)' }}>/100</span>
+          <div role="radiogroup" aria-label="How true is this for you?" className="space-y-2 mb-8">
+            {SCALE_LABELS.map(option => {
+              const on = selected === option.value
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setSelected(option.value)}
+                  className="w-full flex items-center gap-4 p-3.5 text-left transition-all"
+                  style={{
+                    background: on ? 'rgba(184,151,42,0.1)' : 'var(--bg-elevated)',
+                    border: on ? '1px solid var(--gold)' : '1px solid var(--bg-border)',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span
+                    className="w-7 h-7 flex items-center justify-center flex-shrink-0 font-display text-sm font-bold transition-all"
+                    style={{
+                      background: on ? 'var(--gold)' : 'transparent',
+                      color: on ? 'var(--bg-primary)' : 'var(--text-muted)',
+                      border: on ? 'none' : '1px solid var(--bg-border)',
+                      borderRadius: '2px',
+                    }}
+                  >
+                    {option.value}
+                  </span>
+                  <span style={{ color: on ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{option.label}</span>
+                </button>
+              )
+            })}
           </div>
-          <button onClick={handleNext} className="btn-gold w-full py-3">
+          <button
+            onClick={handleNext}
+            disabled={selected === null}
+            className="btn-gold w-full py-3"
+            style={selected === null ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+          >
             Next →
           </button>
         </div>
