@@ -34,7 +34,7 @@ export default async function DashboardPage() {
   const couple = await getCoupleForUser(supabase, user.id)
 
   // No couple — either a solo Readiness participant (by design, see
-  // migration 005), or someone who hasn't finished onboarding/pairing yet.
+  // migration 004), or someone who hasn't finished onboarding/pairing yet.
   if (!couple) {
     if (profile.intended_track === 'readiness') {
       return <SoloDashboard profile={profile} supabase={supabase} userId={user.id} />
@@ -309,7 +309,7 @@ export default async function DashboardPage() {
 
 // ── Solo Readiness dashboard ──────────────────────────────────────
 // No couple, no partner panel, no invite code — a single person's own
-// readiness picture. See migration 005 / docs/VERIFICATION.md.
+// readiness picture. See migration 004 / docs/VERIFICATION.md.
 async function SoloDashboard({ profile, supabase, userId }: { profile: any; supabase: any; userId: string }) {
   const { data: assessment } = await supabase
     .from('assessments')

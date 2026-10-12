@@ -1,7 +1,7 @@
 // lib/formation/fruit.ts
 //
 // Fruit of the Spirit (Galatians 5:22-23) — a deliberately unscored
-// reflection layer, built the way EIKON built its own. See migration 005's
+// reflection layer, built the way EIKON built its own. See migration 004/005's
 // header comment and docs/PILLARS.md for the full rationale: fruit is
 // produced by abiding, not achieved by trying harder at it, so nothing
 // here is a Likert scale, a rubric, or a computed score. Static,

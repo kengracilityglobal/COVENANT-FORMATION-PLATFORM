@@ -58,6 +58,21 @@ export async function GET(
     service.from('fruit_reflections').select('fruit, reflection_text').eq('participant_id', assessment.participant_id).order('fruit'),
   ])
 
+  // The questions behind this person's responses. The builder uses each question's own scoring
+  // rubric to show, per pillar, where their answers held and where they slipped — this is what
+  // makes the offline report specific to them. Optional: if the lookup fails the report still
+  // renders in full, just without those evidence panels.
+  const questionIds = Array.from(new Set((responses ?? []).map((r: any) => r.question_id).filter(Boolean)))
+  let questions: any[] = []
+  if (questionIds.length) {
+    const { data: qrows, error: qerr } = await service
+      .from('questions')
+      .select('id, code, pillar, question_type, question_text, scale_reversed, scoring_rubric')
+      .in('id', questionIds)
+    if (qerr) console.error('[report/html] question lookup failed — rendering without evidence panels:', qerr.message)
+    questions = qrows ?? []
+  }
+
   const aiPortraits: Record<string, { portrait?: string; gap_note?: string; invitation?: string }> = {}
   for (const row of portraitRows ?? []) {
     aiPortraits[row.pillar] = row.content ?? {}
@@ -112,6 +127,7 @@ export async function GET(
     otherPartnerName,
     coupleGap,
     fruitReflections: fruitRows ?? [],
+    questions,
   })
 
   return new NextResponse(html, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })

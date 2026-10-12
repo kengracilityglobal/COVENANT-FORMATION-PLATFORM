@@ -1,7 +1,7 @@
 // @ts-nocheck
 // ─────────────────────────────────────────────────────────────────────────────
 // types/supabase.ts
-// Generated from the real migrated schema (001-006) against a local Postgres
+// Generated from the real migrated schema (001-005) against a local Postgres
 // instance seeded with every migration in this repo — not hand-written, and
 // not a leftover from EIKON. See docs/VERIFICATION.md for how.
 // Regenerate against a live Supabase project at any time:

@@ -1,0 +1,24 @@
+-- ============================================================
+-- Covenant Formation Platform — Migration 004
+--
+-- Adds the 'readiness' value to the assessment_track enum, split into its
+-- own migration file for a specific, non-optional Postgres reason: a
+-- brand-new enum value cannot be referenced — not even compared against
+-- as a literal in a CHECK constraint — within the same transaction that
+-- creates it. Postgres raises exactly this error if you try:
+--
+--   ERROR:  55P04: unsafe use of new value "readiness" of enum type
+--   assessment_track
+--   HINT:  New enum values must be committed before they can be used.
+--
+-- psql's default behavior (autocommit per statement, unless explicitly
+-- wrapped in BEGIN/COMMIT) already keeps this safe when migrations are
+-- applied one file at a time. Supabase's SQL editor, though, runs a
+-- pasted script as a single implicit transaction — which is exactly where
+-- this broke when the ADD VALUE and its first use (the CHECK constraint
+-- in migration 005) were both in one file. Splitting ADD VALUE into its
+-- own migration, run and committed before anything references the new
+-- value, avoids this regardless of which tool applies the migrations.
+-- ============================================================
+
+ALTER TYPE assessment_track ADD VALUE IF NOT EXISTS 'readiness';

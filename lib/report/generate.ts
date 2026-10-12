@@ -80,8 +80,14 @@ export interface PortraitResult { portrait: string; gap_note: string; invitation
 
 interface PillarResponse { question_text: string; response_text: string | null; response_scale: number | null }
 
+// The portrait prompt above is written about a marriage and a spouse. A readiness-track
+// participant is single or not yet paired, so without this note the model would invent a spouse.
+const READINESS_NOTE = `
+THIS PERSON IS NOT MARRIED AND HAS NO PARTNER IN THIS ASSESSMENT. Ignore every mention of "their spouse" and "their marriage" above. Write about how they show up with the people closest to them (family, friends, anyone they have dated), what that predicts for a future marriage, and what it costs them now. Never mention or imply a spouse. The one thing to do this week is something they can do alone or with a trusted friend or mentor, not "with their spouse".`
+
 async function generatePortraitForPillar(
-  pillar: string, descriptor: string, score: number, participantName: string, pillarResponses: PillarResponse[]
+  pillar: string, descriptor: string, score: number, participantName: string, pillarResponses: PillarResponse[],
+  isReadiness = false,
 ): Promise<PortraitResult> {
   const written = pillarResponses
     .filter(r => r.response_text && r.response_text.length > 50)
@@ -96,10 +102,10 @@ Score context: ${SCORE_PLAIN[descriptor] ?? descriptor} (score: ${score}/100)
 Their actual responses in this area:
 <answers>${written || 'Only scale/frequency questions answered in this area -- no extended written responses.'}</answers>
 
-Write the report section for this person, about their marriage.`
+Write the report section for this person, about ${isReadiness ? 'how they show up in close relationships' : 'their marriage'}.`
 
   return callClaudeJSON<PortraitResult>({
-    system: PORTRAIT_SYSTEM_PROMPT,
+    system: isReadiness ? PORTRAIT_SYSTEM_PROMPT + READINESS_NOTE : PORTRAIT_SYSTEM_PROMPT,
     user: userMessage,
     maxTokens: 500,
     tier: 'primary',
@@ -159,7 +165,8 @@ export async function ensureReportGenerated(assessmentId: string): Promise<{ gen
             response_scale: r.response_scale ?? null,
           }))
         const content = await generatePortraitForPillar(
-          pillar, pillarDescs[pillar] ?? 'growing', pillarScores[pillar] ?? 50, profile.full_name ?? 'there', pillarResponses
+          pillar, pillarDescs[pillar] ?? 'growing', pillarScores[pillar] ?? 50, profile.full_name ?? 'there', pillarResponses,
+          assessment.track === 'readiness'
         )
         return { pillar, content }
       }))

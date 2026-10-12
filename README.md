@@ -46,7 +46,7 @@ unlisted feature exists.
 | Styling | Tailwind CSS |
 | Database | Supabase (PostgreSQL + Row Level Security) |
 | Auth | Supabase Auth (password + magic link) |
-| AI (optional) | Anthropic Claude — written-answer scoring + personalised report portraits. The platform works fully without it; it falls back to a deterministic keyword scorer and static report content. |
+| AI (optional) | Anthropic Claude — written-answer scoring + personalised report portraits. The platform works fully without it; it falls back to a deterministic keyword scorer and a full offline report (see `docs/OFFLINE-REPORT.md`). |
 | Email | Resend (report-ready notice, unsubscribe) |
 | Deployment | Vercel |
 
@@ -76,8 +76,18 @@ optional — see `.env.example` for what changes if it's left blank.
 
 ## 3. Database setup
 
-Run all five migrations, in order, against a fresh Supabase project (via
-`supabase db push`, the Supabase SQL editor, or `psql`):
+Run all six migrations, **in order, each as its own execution** — one
+file, run, confirmed, then the next. This matters more than it sounds: if
+you're using the Supabase SQL editor, paste and run one file at a time,
+not the whole folder concatenated together. Migration 004 adds a new
+database enum value, and Postgres refuses to let a brand-new enum value be
+referenced anywhere else — including in migration 005's CHECK constraint —
+inside the same transaction that creates it. `psql` run file-by-file
+handles this safely by default; the Supabase SQL editor runs a pasted
+script as a single implicit transaction, so pasting 004 and 005 together
+(or the whole folder in one paste) will fail with
+`ERROR: 55P04: unsafe use of new value "readiness" of enum type assessment_track`.
+Running each file as its own SQL editor execution avoids this entirely.
 
 1. `supabase/migrations/001_initial_schema.sql` — tables, enums, indexes.
 2. `supabase/migrations/002_rls_and_guards.sql` — Row Level Security
@@ -88,27 +98,24 @@ Run all five migrations, in order, against a fresh Supabase project (via
    married-track question bank (8 pillars × 6 questions + 2 cross-pillar).
    The premarital track is supported architecturally but has no seeded
    questions yet — see `docs/VERIFICATION.md`.
-4. `supabase/migrations/004_readiness_enum_value.sql` — adds the
-   `'readiness'` value to the `assessment_track` enum. **Run this on its
-   own, as a separate query, and let it commit before running 005.**
-   Postgres will not let a newly added enum value be used in the same
-   transaction that added it (error 55P04), and the Supabase SQL editor
-   runs each pasted query as one transaction.
-5. `supabase/migrations/005_readiness_and_fruit.sql` — adds the solo
-   `readiness` track (nullable `couple_id` on `assessments`, guarded by a
-   CHECK constraint so every other track still requires a couple) and the
-   `fruit_reflections` table for the unscored Fruit of the Spirit layer.
-6. `supabase/migrations/006_questions_seed_readiness.sql` — the 32-question
-   readiness-track question bank (8 pillars × 4 questions), separate from
-   the married bank.
+4. `supabase/migrations/004_readiness_track_enum.sql` — adds the solo
+   `'readiness'` value to the `assessment_track` enum. Kept as its own
+   migration, and must be run and committed before migration 005, for the
+   Postgres reason explained above.
+5. `supabase/migrations/005_readiness_and_fruit.sql` — the solo
+   `readiness` track's schema (nullable `couple_id` on `assessments`,
+   guarded by a CHECK constraint so every other track still requires a
+   couple) and the `fruit_reflections` table for the unscored Fruit of the
+   Spirit layer.
+6. `supabase/migrations/006_questions_seed_readiness.sql` — the
+   32-question readiness-track question bank (8 pillars × 4 questions),
+   separate from the married bank.
 
-Migrations 001–003 and the original readiness/fruit schema were run clean,
-in order, against a real local Postgres 16 instance (see
-`docs/VERIFICATION.md`). That local run applied each file with `psql -f`,
-which does not wrap a file in one transaction, so it did not catch the
-55P04 enum error that the Supabase SQL editor raised. The split into 004 and
-005 fixes that, but the split files themselves have not yet been re-run
-end-to-end — apply them to your Supabase project in order and confirm.
+All six have been run clean, in order (each as its own execution, exactly
+as described above), against a real local Postgres 16 instance as part of
+this build (not just read by eye) — see `docs/VERIFICATION.md` for what
+that testing covered, including the v1.1 section for migrations 004–006
+specifically.
 
 ## 4. Supabase Auth configuration
 

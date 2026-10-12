@@ -18,6 +18,10 @@ import type { Profile, Assessment, Response, ReportContent, PillarName } from '@
 import { PILLAR_DISPLAY_NAMES, PILLAR_ANCHOR, PILLAR_SCRIPTURE, DESCRIPTOR_COLORS, DESCRIPTOR_LABELS, GAP_BAND_LABELS, GAP_BAND_COLORS } from '@/types'
 import { CORE_PILLARS, type CorePillar } from '@/lib/scoring/aggregate'
 import type { CoupleGapResult } from '@/lib/scoring/gap'
+import {
+  buildPillarPortrait, buildOverview, buildFirstMonth, readGap, escapeHtml, fillTokens,
+  type QuestionLite, type PillarPortrait, type EvidenceItem,
+} from './offline-portrait'
 
 interface BuildReportInput {
   profile: Profile
@@ -39,131 +43,54 @@ interface BuildReportInput {
    *  narrative section if any exist — never scored, never given a number. Pulled fresh at render
    *  time, same as everything else in this report. */
   fruitReflections?: Array<{ fruit: string; reflection_text: string }>
+  /** The question rows for this assessment's responses. Optional: when present, every pillar also
+   *  shows evidence from the person's own answers (see lib/report/offline-portrait.ts). When absent
+   *  the report renders exactly as before, just without the evidence panels. */
+  questions?: QuestionLite[]
 }
 
 const PILLARS = CORE_PILLARS as readonly CorePillar[]
+const esc = escapeHtml
 
-// ── Fallback portraits ──────────────────────────────────────────────
-// Used only when no AI portrait and no report_content override exist for
-// a pillar (Claude unavailable, or generation still in flight on first
-// view). Templated rather than hand-authored per pillar+descriptor — the
-// real per-couple writing lives in generatePortraitForPillar() in
-// lib/report/generate.ts, which runs for the top-3 priority pillars on
-// every completed assessment. This is the honest "not yet written" state,
-// not a silent stand-in for real analysis.
-
-// Each pillar's cost line also carries the relevant thread from the ten
-// research dimensions this framework was checked against (self-awareness,
-// communication, conflict & repair, emotional intimacy, trust & safety,
-// values & beliefs, money & responsibility, family/roles/future, intimacy &
-// romance, growth & partnership — see docs/PILLARS.md). None became a
-// separate pillar; each lives inside one or two of the eight below.
-const PILLAR_COST: Record<CorePillar, string> = {
-  covenant_faithfulness:  'how reliably you show up for your spouse when keeping your word is costly or inconvenient, and whether your deepest values and faith actually line up, not just your calendars',
-  oneness:                'whether you function as a team or as two separate lives sharing an address, and how well you adapt to and support each other as partners',
-  sacrificial_love:       'what you actually give up for your spouse, not just what you say you would, and whether it is given freely or quietly resented',
-  intimacy:               'how fully known you let your spouse be to you, and you to them — physically, emotionally, and in affection and attraction',
-  truthful_communication: 'whether what you say to your spouse matches what is actually true and felt, and how well you each actually listen, not just talk',
-  conflict_repair:        'whether disagreements between you actually get resolved or just stop, and how self-aware you each are about your own triggers and your own part in it',
-  mutual_honor:           'how you treat your spouse, especially under frustration or in front of others, and whether you actively support each other\'s growth',
-  shared_vision:          'whether you and your spouse are building one future together or two — money, in-laws, children, roles, and calling included',
-}
-
-// Readiness-track equivalent of PILLAR_COST — same eight questions, reframed
-// for someone who does not yet have a spouse to answer about. "Between you"
-// becomes "in you"; "your spouse" becomes "a future spouse" or is dropped
-// in favor of the person's own patterns, since that is what a solo
-// assessment can actually see.
-const PILLAR_COST_READINESS: Record<CorePillar, string> = {
-  covenant_faithfulness:  'how reliably you keep your word to people close to you when it is costly or inconvenient, and whether your deepest values and your actual choices line up, not just your intentions',
-  oneness:                'whether you actually know how to function as part of a team rather than only on your own, and how well you adapt to and support the people you are closest to',
-  sacrificial_love:       'what you actually give up for people you love, not just what you say you would, and whether you can do it without quietly resenting it',
-  intimacy:               'how fully you let yourself be known by the people closest to you — emotionally, not just in conversation — and how comfortable you are being truly seen',
-  truthful_communication: 'whether what you say to people close to you matches what is actually true and felt, and how well you actually listen, not just wait to talk',
-  conflict_repair:        'whether disagreements in your closest relationships actually get resolved or just stop, and how self-aware you are about your own triggers and your own part in them',
-  mutual_honor:           'how you treat the people closest to you, especially under frustration or in front of others, and whether you know how to actively support someone else\'s growth',
-  shared_vision:          'whether you have actually done the work of knowing your own mind — money, family, calling, where you want to live — or are still vague about it and hoping clarity will arrive on its own',
-}
-
-const DESCRIPTOR_FRAME: Record<string, { open: string; close: string }> = {
-  christformed: {
-    open: 'This is a place of real strength in your marriage.',
-    close: 'The next step here is not fixing anything — it is staying honest about it as life changes.',
-  },
-  rooted: {
-    open: 'This is genuinely working between you, with one condition where it holds less reliably.',
-    close: 'Notice the specific moments when it slips, and bring those — not the general pattern — to your next conversation with your spouse.',
-  },
-  growing: {
-    open: 'The intention is present between you, but the practice is inconsistent, especially under pressure.',
-    close: 'One honest conversation about where it breaks down will do more than general effort.',
-  },
-  awakening: {
-    open: 'You both know what this should look like, but the habit has not yet formed between you.',
-    close: 'Start smaller than feels sufficient — one specific, repeatable practice, not a resolution.',
-  },
-  unengaged: {
-    open: 'This area has not yet been seriously engaged between you.',
-    close: 'Naming it honestly, without defending it, is the entire first step.',
-  },
-}
-
-// Readiness-track equivalent of DESCRIPTOR_FRAME — same five levels, worded
-// for a pattern the person carries into any close relationship, not a
-// dynamic already running between two spouses.
-const DESCRIPTOR_FRAME_READINESS: Record<string, { open: string; close: string }> = {
-  christformed: {
-    open: 'This is a genuine strength you already bring into close relationships.',
-    close: 'The next step here is not fixing anything — it is staying honest about it as your relationships deepen.',
-  },
-  rooted: {
-    open: 'This is genuinely working in how you relate to people close to you, with one condition where it holds less reliably.',
-    close: 'Notice the specific moments when it slips, and bring those — not the general pattern — to a mentor or Formation Guide.',
-  },
-  growing: {
-    open: 'The intention is present, but the practice is inconsistent, especially under pressure.',
-    close: 'One honest conversation about where it breaks down will do more than general effort.',
-  },
-  awakening: {
-    open: 'You know what this should look like, but the habit has not yet formed in you.',
-    close: 'Start smaller than feels sufficient — one specific, repeatable practice, not a resolution.',
-  },
-  unengaged: {
-    open: 'This area has not yet been seriously engaged.',
-    close: 'Naming it honestly, without defending it, is the entire first step — and it is far easier to do now than after a wedding.',
-  },
-}
-
-function fallbackPortrait(pillar: CorePillar, descriptor: string, isReadiness: boolean): string {
-  const name = PILLAR_DISPLAY_NAMES[pillar]
-  const cost = isReadiness ? PILLAR_COST_READINESS[pillar] : PILLAR_COST[pillar]
-  const frameSet = isReadiness ? DESCRIPTOR_FRAME_READINESS : DESCRIPTOR_FRAME
-  const frame = frameSet[descriptor] ?? frameSet.growing
-  const closing = isReadiness
-    ? 'Your Formation Guide will address this directly with you.'
-    : 'Your Formation Guide will address this pillar directly in your first session together.'
-  return `${frame.open} In ${name.toLowerCase()}, the real question is ${cost}. ${frame.close} ${closing}`
-}
-
-function getIntegrityFlagText(pillar: CorePillar, flag: string): string {
-  if (!flag || flag === 'none') return ''
-  const name = PILLAR_DISPLAY_NAMES[pillar]
-  if (flag === 'significant') {
-    return `There is a notable gap in ${name} between what you described in general and how you actually answered when the scenario made the cost real. This is not an accusation — it is the most useful signal the assessment can produce. It is worth examining closely with your Guide before formation work in this area proceeds.`
-  }
-  return `Your answers in ${name} were slightly inconsistent — what you described in general terms did not fully match your scenario response. Worth raising with your Guide.`
-}
+// ── Portraits ──────────────────────────────────────────────────────
+// Priority for each pillar's written portrait: an AI portrait (top-3
+// priority pillars, when ANTHROPIC_API_KEY is set) → an admin override from
+// report_content → the offline portrait. The offline portrait is not a
+// stand-in for "no data yet"; it is the same plain-English voice the AI
+// prompt asks for, authored per pillar × level (lib/report/offline-content.ts)
+// and combined with the person's own answers by lib/report/offline-portrait.ts.
+// Five of the eight pillars always render from it, even with an API key, so
+// it has to be good on its own.
 
 export function buildReportHTML({
-  profile, assessment, responses, reportContent, aiPortraits, partnerName, otherPartnerName, coupleGap, fruitReflections,
+  profile, assessment, responses, reportContent, aiPortraits, partnerName, otherPartnerName, coupleGap, fruitReflections, questions,
 }: BuildReportInput): string {
   const isReadiness = assessment.track === 'readiness'
+  const track        = assessment.track
+  // "your spouse" / "your partner" (premarital) / readiness has neither.
+  const sp           = fillTokens('{sp}', track)
+  const Sp           = fillTokens('{Sp}', track)
+  const mar          = fillTokens('{mar}', track)
   const scores        = assessment.pillar_scores || {}
   const descriptors    = assessment.pillar_descriptors || {}
   const priorityStack  = assessment.priority_stack || []
   const overallScore   = assessment.overall_score || 0
   const integrityFlags = assessment.integrity_flags || {}
   const displayName    = partnerName || profile.full_name
+
+  // ── Offline engine (deterministic, no API needed) ────────────────
+  const pillarPortraits = {} as Record<CorePillar, PillarPortrait>
+  for (const p of PILLARS) {
+    pillarPortraits[p] = buildPillarPortrait({
+      pillar: p, track, score: (scores as any)[p] ?? 50, descriptor: (descriptors as any)[p],
+      integrityFlag: (integrityFlags as any)[p], responses: responses as any, questions,
+    })
+  }
+  const overview = buildOverview({ track, scores: scores as any, overall: overallScore, integrityFlags: integrityFlags as any })
+  const gapReading = readGap(coupleGap, track, otherPartnerName)
+  const planOrder: string[] = (!isReadiness && coupleGap?.both_complete && coupleGap.joint_priority_stack.length)
+    ? coupleGap.joint_priority_stack : priorityStack
+  const firstMonth = buildFirstMonth({ track, order: planOrder, descriptors: descriptors as any, scores: scores as any })
 
   function getContent(key: string): string {
     const entry = reportContent.find(c => c.content_key === key)
@@ -175,11 +102,40 @@ export function buildReportHTML({
     if (ai?.portrait) return ai.portrait
     const dbContent = getContent(`portrait_${pillar}_${descriptor}`)
     if (dbContent) return dbContent
-    return fallbackPortrait(pillar, descriptor, isReadiness)
+    return pillarPortraits[pillar].portrait
   }
 
   function getInvitation(pillar: CorePillar): string {
-    return aiPortraits?.[pillar]?.invitation || ''
+    return aiPortraits?.[pillar]?.invitation || pillarPortraits[pillar].action
+  }
+
+  function evidenceRow(label: string, item: EvidenceItem): string {
+    const answered = item.kind === 'frequency' && item.answerLabel
+      ? `You answered <strong style="color:#C4A96A; font-weight:600;">${esc(item.answerLabel)}</strong>.`
+      : item.kind === 'written' ? 'Your written answer.' : ''
+    return `
+      <div style="padding:12px 0; border-top:1px solid #1A1510;">
+        <p style="font-family:Georgia; font-size:9px; font-weight:700; color:#8A7340; letter-spacing:0.2em; text-transform:uppercase; margin:0 0 5px;">${label}</p>
+        <p style="font-family:Georgia; font-size:12.5px; font-style:italic; line-height:1.65; color:#C4A96A; margin:0 0 4px;">&ldquo;${esc(item.statement)}&rdquo;</p>
+        <p style="font-family:Georgia; font-size:11.5px; line-height:1.65; color:#8A7340; margin:0;">${answered}${item.rubricLine ? ` What that looks like: ${esc(item.rubricLine)}.` : ''}</p>
+      </div>`
+  }
+
+  function evidenceBlock(pillar: CorePillar): string {
+    const ev = pillarPortraits[pillar].evidence
+    if (!ev.holds && !ev.slips && !ev.consistent && !ev.excerpt) return ''
+    return `
+      <div style="margin:0 0 18px; padding:14px 18px 6px; background:#100D08; border:1px solid #1E1810;">
+        <p style="font-family:Georgia; font-size:9px; font-weight:700; color:#5A5040; letter-spacing:0.25em; text-transform:uppercase; margin:0 0 6px;">From your own answers</p>
+        ${ev.holds ? evidenceRow(ev.holds.score >= 60 ? 'Where this holds' : 'Your strongest answer here', ev.holds) : ''}
+        ${ev.slips ? evidenceRow(ev.slips.score >= 70 ? 'Where there is most room to grow' : 'Where it slips', ev.slips) : ''}
+        ${ev.consistent ? `<p style="font-family:Georgia; font-size:12px; font-style:italic; line-height:1.7; color:#8A7340; margin:0 0 12px; padding-top:10px; border-top:1px solid #1A1510;">${esc('Your answers in this area were consistent from one question to the next, which makes the picture above easier to trust.')}</p>` : ''}
+        ${ev.excerpt ? `
+          <div style="padding:12px 0; border-top:1px solid #1A1510;">
+            <p style="font-family:Georgia; font-size:9px; font-weight:700; color:#8A7340; letter-spacing:0.2em; text-transform:uppercase; margin:0 0 5px;">In your own words</p>
+            <p style="font-family:Georgia; font-size:12.5px; font-style:italic; line-height:1.7; color:#C4A96A; margin:0;">&ldquo;${esc(ev.excerpt)}&rdquo;</p>
+          </div>` : ''}
+      </div>`
   }
 
   function descriptorBadge(descriptor: string): string {
@@ -268,7 +224,8 @@ export function buildReportHTML({
     const flag        = (integrityFlags as any)[pillar] || 'none'
     const portrait    = getPortrait(pillar, descriptor)
     const invitation  = getInvitation(pillar)
-    const flagText    = flag !== 'none' ? getIntegrityFlagText(pillar, flag) : ''
+    const flagText    = flag !== 'none' ? pillarPortraits[pillar].flagText : ''
+    const gapLine     = gapReading[pillar] || ''
 
     return `
       <div style="margin-bottom:52px; padding-bottom:44px; border-bottom:1px solid #2A2218;">
@@ -303,20 +260,29 @@ export function buildReportHTML({
         </p>
 
         <p style="font-family:Georgia; font-size:14.5px; line-height:1.9; color:#C4A96A; margin:0 0 18px; text-align:justify;">
-          ${portrait}
+          ${esc(portrait)}
         </p>
+
+        ${evidenceBlock(pillar)}
 
         ${invitation ? `
           <div style="padding:16px 18px; background:rgba(74,122,74,0.06); border-left:3px solid #4A7A4A; margin-bottom:16px;">
-            <p style="font-family:Georgia; font-size:9px; font-weight:700; color:#4A7A4A; letter-spacing:0.15em; text-transform:uppercase; margin:0 0 6px;">Together this week</p>
-            <p style="font-family:Georgia; font-size:13px; line-height:1.7; color:#8A7340; margin:0;">${invitation}</p>
+            <p style="font-family:Georgia; font-size:9px; font-weight:700; color:#4A7A4A; letter-spacing:0.15em; text-transform:uppercase; margin:0 0 6px;">${isReadiness ? 'One thing to do this week' : 'Together this week'}</p>
+            <p style="font-family:Georgia; font-size:13px; line-height:1.7; color:#8A7340; margin:0;">${esc(fillTokens(invitation, track))}</p>
+          </div>
+        ` : ''}
+
+        ${gapLine ? `
+          <div style="padding:14px 18px; background:rgba(184,151,42,0.04); border-left:3px solid #8A7340; margin-bottom:16px;">
+            <p style="font-family:Georgia; font-size:9px; font-weight:700; color:#8A7340; letter-spacing:0.15em; text-transform:uppercase; margin:0 0 6px;">Between the two of you</p>
+            <p style="font-family:Georgia; font-size:13px; line-height:1.7; color:#8A7340; margin:0;">${esc(gapLine)}</p>
           </div>
         ` : ''}
 
         ${flagText ? `
           <div style="padding:18px 20px; background:rgba(196,122,26,0.06); border-left:3px solid #C47A1A; margin-top:16px;">
             <p style="font-family:Georgia; font-size:10px; font-weight:700; color:#C47A1A; letter-spacing:0.15em; text-transform:uppercase; margin:0 0 8px;">⚑ INTEGRITY SIGNAL — ${flag.toUpperCase()}</p>
-            <p style="font-family:Georgia; font-size:13px; line-height:1.75; color:#8A7340; font-style:italic; margin:0;">${flagText}</p>
+            <p style="font-family:Georgia; font-size:13px; line-height:1.75; color:#8A7340; font-style:italic; margin:0;">${esc(flagText)}</p>
           </div>
         ` : ''}
       </div>
@@ -329,7 +295,7 @@ export function buildReportHTML({
       return `
         <div style="padding:28px; background:rgba(184,151,42,0.03); border:1px solid #2A2218; text-align:center;">
           <p style="font-family:Georgia; font-size:13px; color:#4A3F2F; line-height:1.8;">
-            The gap comparison between you and your spouse's answers will appear here once your couple record can be matched. If this persists, contact your Formation Guide.
+            The gap comparison between your answers and ${sp}'s will appear here once your couple record can be matched. If this persists, contact your Formation Guide.
           </p>
         </div>
       `
@@ -338,10 +304,10 @@ export function buildReportHTML({
       return `
         <div style="padding:28px; background:rgba(184,151,42,0.03); border:1px solid #2A2218; text-align:center;">
           <p style="font-family:Georgia; font-size:14px; color:#8A7340; line-height:1.8; margin-bottom:8px;">
-            ${otherPartnerName ? `${otherPartnerName} hasn't` : 'Your spouse hasn\'t'} completed their assessment yet.
+            ${otherPartnerName ? `${esc(otherPartnerName)} hasn't` : `${Sp} hasn't`} completed their assessment yet.
           </p>
           <p style="font-family:Georgia; font-size:12.5px; color:#4A3F2F; line-height:1.75;">
-            The Perception Gap between your two sets of answers — where you see your marriage the same way, and where you don't — will appear here automatically the moment both of you have finished. Nothing further to do on your end.
+            The Perception Gap between your two sets of answers — where you see ${mar} the same way, and where you don't — will appear here automatically the moment both of you have finished. Nothing further to do on your end.
           </p>
         </div>
       `
@@ -379,7 +345,7 @@ export function buildReportHTML({
             <tr style="background:#1A1510;">
               <th style="font-family:Georgia; font-size:9px; letter-spacing:0.18em; color:#8A7340; padding:10px 12px; text-align:left; border-bottom:1px solid #2A2218;">PILLAR</th>
               <th style="font-family:Georgia; font-size:9px; letter-spacing:0.18em; color:#8A7340; padding:10px 12px; text-align:center; border-bottom:1px solid #2A2218;">YOU</th>
-              <th style="font-family:Georgia; font-size:9px; letter-spacing:0.18em; color:#8A7340; padding:10px 12px; text-align:center; border-bottom:1px solid #2A2218;">${otherPartnerName ? otherPartnerName.toUpperCase() : 'SPOUSE'}</th>
+              <th style="font-family:Georgia; font-size:9px; letter-spacing:0.18em; color:#8A7340; padding:10px 12px; text-align:center; border-bottom:1px solid #2A2218;">${otherPartnerName ? esc(otherPartnerName.toUpperCase()) : esc(sp.replace('your ', '').toUpperCase())}</th>
               <th style="font-family:Georgia; font-size:9px; letter-spacing:0.18em; color:#8A7340; padding:10px 12px; text-align:center; border-bottom:1px solid #2A2218;">GAP</th>
             </tr>
           </thead>
@@ -390,9 +356,18 @@ export function buildReportHTML({
           <p style="font-family:Georgia; font-size:13px; line-height:1.8; color:#8A7340; margin:0;">
             ${topGaps.map(p => PILLAR_DISPLAY_NAMES[p]).join(', ')} — ranked here by the size of the gap between
             you, not just by either of your individual scores, because an unseen gap is its own kind of risk
-            to a marriage. Bring these three to your first conversation with your Formation Guide, together.
+            to ${mar}. Bring these three to your first conversation with your Formation Guide, together.
           </p>
         </div>
+        ${topGaps.filter(pl => gapReading[pl]).length ? `
+        <div style="margin-top:22px;">
+          <p style="font-family:Georgia; font-size:10px; font-weight:700; color:#8A7340; letter-spacing:0.2em; text-transform:uppercase; margin:0 0 12px;">Reading the gaps</p>
+          ${topGaps.filter(pl => gapReading[pl]).map(pl => `
+            <div style="padding:12px 0; border-bottom:1px solid #1A1510;">
+              <p style="font-family:Georgia; font-size:12.5px; font-weight:600; color:#F5E6C0; margin:0 0 4px;">${PILLAR_DISPLAY_NAMES[pl]}</p>
+              <p style="font-family:Georgia; font-size:13px; line-height:1.7; color:#8A7340; margin:0;">${esc(gapReading[pl])}</p>
+            </div>`).join('')}
+        </div>` : ''}
       </div>
     `
   }
@@ -428,7 +403,7 @@ export function buildReportHTML({
     const items = fruitReflections.map(r => `
       <div style="padding:16px 0; border-bottom:1px solid #1A1510;">
         <p style="font-family:Georgia; font-size:11px; font-weight:700; color:#8A7340; letter-spacing:0.15em; text-transform:uppercase; margin:0 0 8px;">${names[r.fruit] ?? r.fruit}</p>
-        <p style="font-family:Georgia; font-size:13.5px; line-height:1.8; color:#C4A96A; margin:0; font-style:italic;">"${r.reflection_text}"</p>
+        <p style="font-family:Georgia; font-size:13.5px; line-height:1.8; color:#C4A96A; margin:0; font-style:italic;">"${esc(r.reflection_text)}"</p>
       </div>
     `).join('')
     return `
@@ -459,7 +434,7 @@ export function buildReportHTML({
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Covenant Formation Report — ${displayName}</title>
+<title>Covenant Formation Report — ${esc(displayName)}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -486,7 +461,7 @@ export function buildReportHTML({
   </p>
   <div style="width:200px; height:1px; background:linear-gradient(to right, transparent, #B8972A, transparent); margin-bottom:44px;"></div>
   <p style="font-family:Georgia; font-size:24px; font-weight:600; color:#F5E6C0; margin-bottom:8px;">
-    ${displayName}
+    ${esc(displayName)}
   </p>
   <p style="font-family:Georgia; font-size:12px; color:#8A7340; letter-spacing:0.12em;">
     ${dateFormatted} &nbsp;·&nbsp; Formation Cycle ${assessment.cycle_number ?? 1}
@@ -511,9 +486,9 @@ export function buildReportHTML({
   </p>
   <div style="padding:26px 30px; background:rgba(184,151,42,0.05); border-left:2px solid #B8972A; margin-bottom:32px;">
     <p style="font-family:Georgia; font-size:14.5px; font-style:italic; line-height:1.9; color:#C4A96A; margin-bottom:14px;">
-      Marriage is a covenant, not a contract — modeled on God's own faithfulness to His people. This report
-      is not a verdict on your relationship. It is a mirror, held up so the two of you can see what is
-      actually true between you, together.
+      Marriage is a covenant, not a contract — modeled on God's own faithfulness to His people. ${isReadiness
+        ? 'This report is not a verdict on you. It is a mirror, held up so you can see what is actually true about how you show up in close relationships, before you carry that into a marriage.'
+        : `This report is not a verdict on ${mar}. It is a mirror, held up so the two of you can see what is actually true between you, together.`}
     </p>
     <p style="font-family:Georgia; font-size:13px; line-height:1.8; color:#8A7340;">
       The eight pillars below name the domains where a covenant is either being kept and deepened, or
@@ -526,7 +501,7 @@ export function buildReportHTML({
     <p style="font-family:Georgia; font-size:11px; font-weight:700; color:#8A7340; letter-spacing:0.2em; text-transform:uppercase; margin:0 0 8px;">A note on the numbers</p>
     <p style="font-family:Georgia; font-size:13px; line-height:1.8; color:#4A3F2F; margin:0 0 10px;">
       The scores are diagnostic approximations — patterns surfaced from your answers, not precise
-      measurements of your marriage. Your Formation Guide can review and, with a stated reason, override
+      measurements of ${isReadiness ? 'you' : mar}. Your Formation Guide can review and, with a stated reason, override
       any score their pastoral reading of your answers contradicts — the original computed score is always
       kept on record alongside their override. Treat the numbers as conversation starters, not conclusions.
     </p>
@@ -539,8 +514,8 @@ export function buildReportHTML({
     ` : ''}
   </div>
   <p style="font-family:Georgia; font-size:14px; line-height:1.85; color:#8A7340;">
-    What you are about to read is your own portrait, written from your own answers — and, once your
-    spouse has also finished, a side-by-side look at where your two answers agree and where they don't.
+    What you are about to read is your own portrait, written from your own answers${isReadiness ? '.' : ` — and, once ${sp}
+    has also finished, a side-by-side look at where your two answers agree and where they don't.`}
     Read it with honest eyes and an open heart.
   </p>
 </div>
@@ -550,6 +525,13 @@ export function buildReportHTML({
   <p style="font-family:Georgia; font-size:10px; font-weight:700; color:#8A7340; letter-spacing:0.35em; text-transform:uppercase; margin-bottom:28px;">
     ${isReadiness ? 'WHERE YOU STAND TODAY' : 'A FIRST LOOK, TOGETHER'}
   </p>
+
+  <div style="max-width:640px; margin:0 0 36px;">
+    <p style="font-family:Georgia; font-size:15px; line-height:1.9; color:#C4A96A; margin:0 0 14px;">${esc(overview.opening)}</p>
+    ${overview.ground ? `<p style="font-family:Georgia; font-size:14px; line-height:1.85; color:#8A7340; margin:0 0 14px;">${esc(overview.ground)}</p>` : ''}
+    ${overview.patterns.map(t => `<p style="font-family:Georgia; font-size:14px; line-height:1.85; color:#8A7340; margin:0 0 14px;">${esc(t)}</p>`).join('')}
+    ${overview.flagsNote ? `<p style="font-family:Georgia; font-size:12.5px; font-style:italic; line-height:1.8; color:#5A5040; margin:0;">${esc(overview.flagsNote)}</p>` : ''}
+  </div>
 
   <div style="display:flex; gap:40px; align-items:flex-start; flex-wrap:wrap;">
     <div style="flex:1; min-width:280px; display:flex; flex-direction:column; align-items:center;">
@@ -633,7 +615,7 @@ export function buildReportHTML({
   <p style="font-family:Georgia; font-size:12px; color:#4A3F2F; font-style:italic; margin-bottom:28px; line-height:1.7;">
     ${isReadiness
       ? 'This is your own order. Bring it, honestly, into conversation with a mentor or Formation Guide before you move toward marriage.'
-      : 'This is your individual order. See "The Perception Gap" above for where you and your spouse should focus together — the two lists will not always match, and that is itself worth discussing.'}
+      : `This is your individual order. See "The Perception Gap" above for where you and ${sp} should focus together — the two lists will not always match, and that is itself worth discussing.`}
   </p>
   ${priorityStack.map((pillar: string, i: number) => {
     const score       = (scores as any)[pillar] || 0
@@ -668,6 +650,26 @@ export function buildReportHTML({
   }).join('')}
 </div>
 
+${firstMonth.length ? `
+<div style="padding-bottom:44px; margin-bottom:44px; border-bottom:1px solid #2A2218;">
+  <p style="font-family:Georgia; font-size:10px; font-weight:700; color:#8A7340; letter-spacing:0.35em; text-transform:uppercase; margin-bottom:12px;">
+    YOUR FIRST MONTH
+  </p>
+  <p style="font-family:Georgia; font-size:13.5px; color:#8A7340; line-height:1.8; margin-bottom:22px; max-width:620px;">
+    ${isReadiness
+      ? 'One small thing a week, in the order that matters most for you. Small enough to actually do. Stop after each one and notice what it showed you.'
+      : `One small thing a week, in the order that matters most for the two of you${coupleGap?.both_complete ? ', taking the gaps between you into account' : ''}. Small enough to actually do. Stop after each one and notice what it showed you.`}
+  </p>
+  ${firstMonth.map(w => `
+    <div style="display:flex; gap:20px; padding:16px 0; border-top:1px solid #1A1510;">
+      <div style="width:64px; flex-shrink:0; font-family:Georgia; font-size:10px; font-weight:700; color:#B8972A; letter-spacing:0.15em; text-transform:uppercase; padding-top:3px;">${esc(w.label)}</div>
+      <div style="flex:1; min-width:0;">
+        <p style="font-family:Georgia; font-size:14px; font-weight:600; color:#F5E6C0; margin:0 0 5px;">${esc(w.title)}</p>
+        <p style="font-family:Georgia; font-size:13px; line-height:1.75; color:#8A7340; margin:0;">${esc(w.text)}</p>
+      </div>
+    </div>`).join('')}
+</div>` : ''}
+
 ${fruitSection()}
 
 <!-- CLOSING -->
@@ -679,7 +681,7 @@ ${fruitSection()}
     <p style="font-family:Georgia; font-size:14px; line-height:1.9; color:#C4A96A; margin-bottom:18px;">
       ${isReadiness
         ? 'You have read the diagnostic. The next step is not further reflection alone — it is a conversation, with a mentor or Formation Guide who can help you actually use what you just found.'
-        : 'You have read the diagnostic. The next step is not further reflection alone — it is a conversation, with your spouse, and with your Formation Guide.'}
+        : `You have read the diagnostic. The next step is not further reflection alone — it is a conversation, with ${sp}, and with your Formation Guide.`}
     </p>
     <p style="font-family:Georgia; font-size:13.5px; line-height:1.9; color:#8A7340; margin-bottom:18px;">
       ${isReadiness

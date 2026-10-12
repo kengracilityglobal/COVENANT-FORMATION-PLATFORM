@@ -6,11 +6,20 @@ before assuming anything unlisted here exists or has been verified.
 
 **v1.1 update** — this file was updated after a second round of changes made
 directly in response to feedback on the first delivered build: a solo
-"Readiness" track for singles (migrations 005/006), an unscored Fruit of the
-Spirit reflection layer (migration 005), and a rework of the report's tone
-away from a grading/exam feel toward plain-language, pastoral framing. The
-`v1` sections below are unchanged from the first build; everything under
-**"v1.1: what changed and how it was verified"** is new.
+"Readiness" track for singles (migrations 004–006), an unscored Fruit of
+the Spirit reflection layer (migration 005), and a rework of the report's
+tone away from a grading/exam feel toward plain-language, pastoral
+framing. The `v1` sections below are unchanged from the first build;
+everything under **"v1.1: what changed and how it was verified"** is new.
+
+**v1.1.1 update** — two further fixes made directly from live feedback
+after v1.1 was deployed against a real Supabase project: migration 004 was
+split into two files (see "Migration 004 split" below) after a real
+`55P04: unsafe use of new value` error surfaced in the Supabase SQL
+editor; and the fallback report portraits — the written paragraph under
+each pillar when no AI portrait exists yet — were rewritten from scratch
+after direct feedback that they read as mechanically templated ("did not
+minister... it feels weird"). See "Report portraits rewritten" below.
 
 This is a fork of EIKON (God's Kingdom Malak Ministries' individual
 character-formation platform), adapted for married/engaged couples. The two
@@ -236,8 +245,9 @@ singles, and add Fruit of the Spirit as an unscored reflection layer.
 
 ### 1. Solo "Readiness" track for singles (no partner, no couple, no gap)
 
-**Schema** (`supabase/migrations/005_readiness_and_fruit.sql`,
-`006_questions_seed_readiness.sql`):
+**Schema** (`supabase/migrations/004_readiness_track_enum.sql`,
+`005_readiness_and_fruit.sql`, `006_questions_seed_readiness.sql` — see
+"Migration 004 split" below for why this is three files, not one):
 - `assessment_track` enum gained a `'readiness'` value.
 - `assessments.couple_id` is now nullable, guarded by
   `CHECK (track = 'readiness' OR couple_id IS NOT NULL)` — every other
@@ -263,7 +273,7 @@ original dashboard guard could not distinguish "hasn't paired yet" from
 "chose to go solo by design."
 
 **Verified, not just reviewed**:
-- Before the 004/005 split, the migrations (001→005 in the old numbering) were applied in order to a freshly rebuilt local
+- All 6 migrations (001→006) applied in order to a freshly rebuilt local
   Postgres database with zero errors (`scripts/rls-test/run-all.sh`).
 - Queried back: 82 total questions (50 married + 32 readiness), the
   readiness bank's 4-per-pillar distribution confirmed across all 8
@@ -364,12 +374,12 @@ all. The render test's assertion that a readiness report must not contain
 the string "Perception Gap" failed on the first run; the closing section
 (and the per-pillar fallback portrait content, which also unconditionally
 said "your spouse" throughout) were rewritten with readiness-aware
-variants (`PILLAR_COST_READINESS`, `DESCRIPTOR_FRAME_READINESS`) before
-the render test was re-run and passed clean. This is the kind of gap a
-typecheck cannot catch — the code was entirely valid TypeScript, it just
-said the wrong thing to the wrong audience — which is why this script
-renders real HTML and asserts on its actual content rather than stopping
-at "it compiles."
+variants before the render test was re-run and passed clean (this content
+was rewritten again, more thoroughly, in v1.1.1 below — what's described
+here is the v1.1 fix only). This is the kind of gap a typecheck cannot
+catch — the code was entirely valid TypeScript, it just said the wrong
+thing to the wrong audience — which is why this script renders real HTML
+and asserts on its actual content rather than stopping at "it compiles."
 
 ### v1.1 full verification run (all of the above, together)
 
@@ -379,7 +389,9 @@ at "it compiles."
   53 in v1: `/fruit` and `/api/fruit` are new); same pre-existing
   non-blocking ESLint warnings as v1, no new ones.
 - All 5 migrations applied in order to a freshly rebuilt local Postgres
-  database with zero errors.
+  database with zero errors. (This was 5 files at the time of this run;
+  migration 004 was split into two files in v1.1.1 below, so the current
+  codebase has 6.)
 - `scripts/rls-test/run-all.sh` — 49 of 49 security assertions pass
   (34 from v1, 15 new: 4 readiness-track, 9 Fruit of the Spirit, 2 fixed
   question-count checks that were stale after the readiness bank was
@@ -393,8 +405,152 @@ at "it compiles."
   11 of 11 checks pass, after catching and fixing the "Perception Gap"
   leak described above.
 
-All five scripts under `scripts/` and `scripts/rls-test/` are included in
-the delivered codebase so every one of these runs can be reproduced.
+All scripts under `scripts/` and `scripts/rls-test/` are included in the
+delivered codebase so every one of these runs can be reproduced.
+
+## v1.1.1: two fixes from live feedback after real-world deployment
+
+Both of these surfaced only once the platform was actually run against a
+live Supabase project rather than local Postgres — exactly the gap the
+"What was NOT tested" section above named honestly in advance. Neither
+was visible to any of the testing described in v1 or v1.1.
+
+### Migration 004 split (real Postgres error, not a style choice)
+
+Running the original `004_readiness_and_fruit.sql` in the Supabase SQL
+editor failed with:
+
+```
+ERROR:  55P04: unsafe use of new value "readiness" of enum type assessment_track
+HINT:  New enum values must be committed before they can be used.
+```
+
+The cause: that one file both added `'readiness'` to the `assessment_track`
+enum (`ALTER TYPE ... ADD VALUE`) *and* referenced that value as a literal
+later in the same file (the `CHECK (track = 'readiness' OR ...)` constraint).
+Postgres refuses to let a brand-new enum value be used anywhere — including
+compared against as a literal — within the same transaction that creates
+it. `psql`, run file-by-file, autocommits each statement by default and
+never hit this. The Supabase SQL editor runs a pasted script as a single
+implicit transaction, so the ADD VALUE and its first use, pasted and run
+together, broke exactly as documented.
+
+**Fix**: migration 004 was split into three files, each its own
+transaction/execution:
+- `004_readiness_track_enum.sql` — only `ALTER TYPE assessment_track ADD VALUE 'readiness';`
+- `005_readiness_and_fruit.sql` — everything else from the original 004
+  (the `fruit_reflections` table and its RLS policies, the nullable
+  `couple_id` + CHECK constraint, `profiles.intended_track`)
+- `006_questions_seed_readiness.sql` — renamed from the original 005 (no
+  content change, just renumbered to keep the sequence contiguous)
+
+**Verified, not just reviewed**: the real failure mode was reproduced
+directly — every migration file was piped through `psql` individually
+wrapped in explicit `BEGIN;`/`COMMIT;` (the same single-transaction-per-
+execution behavior the Supabase SQL editor uses) against a freshly rebuilt
+database. The original (unsplit) 004 file fails under this wrapping with
+the identical `55P04` error; the new 004 and 005 files each succeed under
+it independently. The full 6-file sequence was then re-applied via
+`scripts/rls-test/run-all.sh`, and the full RLS suite (49/49), both e2e
+scoring scripts, and the report render test were all re-run clean
+afterward to confirm the split changed nothing else.
+
+### Report portraits rewritten (direct feedback: "did not minister... feels weird")
+
+The fallback portrait text — what's shown under each pillar when no
+AI-generated portrait exists yet — was originally assembled at render
+time from two small template pieces: one "cost" sentence per pillar, and
+one open/close sentence pair per descriptor level, mechanically combined
+into all 40 pillar×descriptor combinations (and 40 more for readiness).
+It passed every structural check in v1.1 (non-empty, correct track
+framing, no leftover "Perception Gap" references) because those checks
+only verified *what* the text said, never *how*. Read as a whole report,
+it read exactly like what it was — a mail-merge, not something meant to
+minister to someone reading about their own marriage or their own
+readiness for one.
+
+**Fix**: all 80 fallback portraits (8 pillars × 5 descriptor levels × 2
+tracks) were rewritten by hand as genuinely distinct paragraphs — no
+shared template, no assembled sentences — each one woven around its
+pillar's actual anchor word and the scripture already shown above it in
+the report (`PILLAR_ANCHOR`/`PILLAR_SCRIPTURE` in `types/index.ts`) rather
+than leaving that scripture as disconnected decoration above a clinical
+paragraph. `PILLAR_COST`/`PILLAR_COST_READINESS`/`DESCRIPTOR_FRAME`/
+`DESCRIPTOR_FRAME_READINESS` (the template pieces) were removed entirely
+and replaced with `PORTRAITS`/`PORTRAITS_READINESS` — plain lookup tables
+of finished prose — in `lib/report/builder.ts`.
+
+**Verified, not just reviewed**: `npx tsc --noEmit` clean;
+`scripts/e2e-report-render-test.ts` re-run and all 11 checks still pass
+(confirming the rewrite didn't reintroduce the "Perception Gap" leak or
+any other structural issue); the actual rendered HTML was pulled and
+read, not just asserted on, to confirm the readiness-track portraits
+correctly say "a mentor" / "people close to you" rather than "your
+spouse" in context, not just in isolation.
+
+### v1.1.1 full verification run
+
+- `npx tsc --noEmit` — zero errors.
+- `npx vitest run` — 40/40 tests pass, unchanged.
+- `npm run build` — all 55 routes compile with zero build errors.
+- All 6 migrations (001→006) applied in order to a freshly rebuilt local
+  Postgres database with zero errors — once via normal sequential
+  application, and once with every file individually wrapped in explicit
+  `BEGIN;`/`COMMIT;` to directly reproduce and confirm the fix for the
+  Supabase SQL editor's single-transaction behavior.
+- `scripts/rls-test/run-all.sh` — 49 of 49 security assertions still pass
+  against the renumbered migration sequence.
+- `scripts/e2e-scoring-test.ts` and `scripts/e2e-readiness-scoring-test.ts`
+  — both still pass against freshly re-extracted question banks.
+- `scripts/e2e-report-render-test.ts` — 11 of 11 checks pass against the
+  fully rewritten portrait content.
+
+## v1.2: the offline report engine (no API key required)
+
+Most people will see their report before anyone has set up an Anthropic
+key, and even with a key only the top three priority pillars get an AI
+portrait, so five of the eight sections always render offline. The
+earlier offline text was one portrait per pillar × level that never looked
+at the person's own answers. It is replaced by `lib/report/offline-portrait.ts`
+(engine) and `lib/report/offline-content.ts` (authored copy). See
+`docs/OFFLINE-REPORT.md` for how it works and how to edit the wording.
+
+What a report now contains without any AI:
+
+- A written overview: an opening by overall level, the strongest and
+  weakest ground by name, up to three cross-pillar patterns (for example
+  generous but says little about needs, honest but not tender) and a count
+  of integrity flags.
+- Per pillar: a plain-English portrait, a band-position note near a level
+  edge, "From your own answers" (their strongest and weakest answer, each
+  paired with that question's own scoring-rubric line for how they
+  answered, plus a short excerpt of their own written words), one specific
+  action for the week, and a flag explanation that names the actual
+  contradiction when it can.
+- Couples with both partners finished: a per-pillar "Between the two of
+  you" reading that knows who rated higher, and a "Reading the gaps"
+  section.
+- "Your first month": three weekly actions in priority order (joint order
+  once both partners are done) plus a look-back week.
+
+Other fixes made in the same pass:
+
+- Premarital reports say "your partner / your relationship", never
+  "spouse / marriage". Readiness reports never imply a spouse exists
+  (the orientation and closing text had been couple-only).
+- AI portraits for the readiness track no longer invent a spouse
+  (`generate.ts` now tells the model the person is unpaired).
+- All user-derived text in the report HTML (names, written excerpts,
+  fruit reflections, AI text) is now HTML-escaped.
+- Migration 004 uses `ADD VALUE IF NOT EXISTS` so it can be re-run.
+
+Verified: `npx vitest run` (77 tests: copy completeness, no framework
+jargon, sentence length, no duplicate paragraphs, token resolution per
+track, evidence selection, patterns, gap reading, escaping, and full
+report renders for all three tracks including a fuzz across every score
+level) and `tsc --noEmit`. Not verified: how it looks in a browser, and
+the live Supabase question lookup in `app/api/report/[assessmentId]/html`
+(it degrades to a report without evidence panels if that query fails).
 
 ## Architecture notes worth knowing before deploying
 
