@@ -79,14 +79,18 @@ export function buildReportHTML({
   const displayName    = partnerName || profile.full_name
 
   // ── Offline engine (deterministic, no API needed) ────────────────
+  // With no AI scorer, written answers were scored by a keyword heuristic that measures how
+  // specific and candid the writing is, not what it says about each pillar. Evidence panels
+  // and flag wording must not present that as a reading of the answer.
+  const writtenByKeyword = String(assessment.scoring_notes ?? '').includes('keyword_fallback')
   const pillarPortraits = {} as Record<CorePillar, PillarPortrait>
   for (const p of PILLARS) {
     pillarPortraits[p] = buildPillarPortrait({
       pillar: p, track, score: (scores as any)[p] ?? 50, descriptor: (descriptors as any)[p],
-      integrityFlag: (integrityFlags as any)[p], responses: responses as any, questions,
+      integrityFlag: (integrityFlags as any)[p], responses: responses as any, questions, writtenByKeyword,
     })
   }
-  const overview = buildOverview({ track, scores: scores as any, overall: overallScore, integrityFlags: integrityFlags as any })
+  const overview = buildOverview({ track, scores: scores as any, overall: overallScore, integrityFlags: integrityFlags as any, responses: responses as any, questions })
   const gapReading = readGap(coupleGap, track, otherPartnerName)
   const planOrder: string[] = (!isReadiness && coupleGap?.both_complete && coupleGap.joint_priority_stack.length)
     ? coupleGap.joint_priority_stack : priorityStack
@@ -507,9 +511,10 @@ export function buildReportHTML({
     </p>
     ${String(assessment.scoring_notes ?? '').includes('keyword_fallback') ? `
     <p style="font-family:Georgia; font-size:13px; line-height:1.8; color:#4A3F2F; margin:0;">
-      Your written answers were scored without AI assistance this time, using a simpler method. The scores
-      are still real and drawn from what you wrote — just lower-fidelity than usual. Your Formation Guide
-      has been told this too, and will weigh it accordingly.
+      Your written answers were scored without AI this time, by a simple method that looks at how specific and
+      candid your writing is, not at what it says about each area. Your ratings are the most reliable part of
+      this report, and anything drawn from your written answers is rougher. Your Formation Guide has been told,
+      and will weigh it accordingly.
     </p>
     ` : ''}
   </div>
@@ -530,6 +535,7 @@ export function buildReportHTML({
     <p style="font-family:Georgia; font-size:15px; line-height:1.9; color:#C4A96A; margin:0 0 14px;">${esc(overview.opening)}</p>
     ${overview.ground ? `<p style="font-family:Georgia; font-size:14px; line-height:1.85; color:#8A7340; margin:0 0 14px;">${esc(overview.ground)}</p>` : ''}
     ${overview.patterns.map(t => `<p style="font-family:Georgia; font-size:14px; line-height:1.85; color:#8A7340; margin:0 0 14px;">${esc(t)}</p>`).join('')}
+    ${overview.ratingNote ? `<p style="font-family:Georgia; font-size:13.5px; line-height:1.85; color:#C4A96A; margin:0 0 14px; padding:12px 16px; border-left:3px solid #8A7340; background:rgba(184,151,42,0.05);">${esc(overview.ratingNote)}</p>` : ''}
     ${overview.flagsNote ? `<p style="font-family:Georgia; font-size:12.5px; font-style:italic; line-height:1.8; color:#5A5040; margin:0;">${esc(overview.flagsNote)}</p>` : ''}
   </div>
 

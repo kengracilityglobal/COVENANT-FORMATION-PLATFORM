@@ -21,7 +21,7 @@ import type { CoupleGapResult } from '@/lib/scoring/gap'
 import {
   COUPLE_PORTRAIT, COUPLE_ACTION, READINESS_PORTRAIT, READINESS_ACTION,
   GAP_LINES, GAP_ALIGNED_STRONG, GAP_ALIGNED_MID, PATTERNS, OVERALL_OPENING,
-  NEAR_NEXT, NEAR_PREV, CONSISTENT, FLAG_SIGNIFICANT, FLAG_MINOR, FLAG_DETAIL, WEEK_FOUR,
+  NEAR_NEXT, NEAR_PREV, CONSISTENT, FLAG_SIGNIFICANT, FLAG_MINOR, FLAG_DETAIL, FLAG_KEYWORD, FLAG_CONTRADICTION, STRAIGHTLINE_NOTE, WEEK_FOUR,
 } from './offline-content'
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -141,10 +141,19 @@ function pluralPoints(n: number): string { return n === 1 ? 'point' : 'points' }
 
 // ── Per-pillar evidence ────────────────────────────────────────────────
 
+/**
+ * `writtenByKeyword`: written answers were scored by the offline keyword heuristic
+ * (lib/scoring/engine.ts keywordScoreWritten), which measures how specific and candid
+ * the writing is, not what it says about this pillar. In that case the strongest and
+ * weakest answers are chosen from the frequency items only, and no rubric line is
+ * shown for a written answer, because nothing actually judged it against that rubric.
+ * The person's own words are still quoted back to them.
+ */
 export function buildEvidence(
   pillar: CorePillar,
   responses: ResponseLite[] | undefined,
   questions: QuestionLite[] | undefined,
+  writtenByKeyword = false,
 ): PillarEvidence {
   const empty: PillarEvidence = { holds: null, slips: null, consistent: false, excerpt: null, answered: 0 }
   if (!responses?.length || !questions?.length) return empty
@@ -157,6 +166,7 @@ export function buildEvidence(
     .filter((x): x is { r: ResponseLite; q: QuestionLite; score: number } => x.score !== null)
 
   if (!rows.length) return empty
+  const rankable = writtenByKeyword ? rows.filter(x => x.q.question_type === 'frequency') : rows
 
   const toItem = (x: { r: ResponseLite; q: QuestionLite; score: number }): EvidenceItem => {
     const d = isDescriptor(x.r.descriptor_assigned) ? x.r.descriptor_assigned : descriptorFromScore(x.score)
@@ -171,14 +181,16 @@ export function buildEvidence(
     }
   }
 
-  const sorted = [...rows].sort((a, b) => a.score - b.score)
+  const sorted = [...rankable].sort((a, b) => a.score - b.score)
   const lo = sorted[0]
   const hi = sorted[sorted.length - 1]
 
   let holds: EvidenceItem | null = null
   let slips: EvidenceItem | null = null
   let consistent = false
-  if (sorted.length === 1) {
+  if (sorted.length === 0) {
+    // nothing rankable (e.g. keyword-scored and no frequency answers): quote words only
+  } else if (sorted.length === 1) {
     if (lo.score >= 60) holds = toItem(lo)
     else slips = toItem(lo)
   } else if (hi.score - lo.score >= 15) {
@@ -220,17 +232,61 @@ function frequencyVsWrittenDetail(
   return FLAG_DETAIL.replace('{said}', truncate(freq.q.question_text, 140)).replace('{label}', label)
 }
 
+/** Two rated statements in one area, one positive and one reverse-worded, that were both agreed
+ *  with (or both disagreed with): the person said two opposite things. Plain text, or ''. */
+function contradictionDetail(
+  pillar: CorePillar,
+  responses: ResponseLite[] | undefined,
+  questions: QuestionLite[] | undefined,
+): string {
+  if (!responses?.length || !questions?.length) return ''
+  const qById = new Map(questions.map(q => [q.id, q]))
+  const rated = responses
+    .map(r => ({ r, q: qById.get(r.question_id), scale: num(r.response_scale) }))
+    .filter(x => x.q && x.q.pillar === pillar && x.q.question_type === 'frequency' && x.scale !== null && x.scale >= 1 && x.scale <= 5) as Array<{ r: ResponseLite; q: QuestionLite; scale: number }>
+  const pos = rated.filter(x => !x.q.scale_reversed)
+  const rev = rated.filter(x => x.q.scale_reversed)
+  const test = (f: (n: number) => boolean) => {
+    const a = pos.find(x => f(x.scale)); const b = rev.find(x => f(x.scale))
+    return a && b ? { a, b } : null
+  }
+  const hit = test(n => n >= 4) ?? test(n => n <= 2)
+  if (!hit) return ''
+  const label = (n: number) => FREQ_LABELS[n - 1].toLowerCase()
+  return `You answered "${label(hit.a.scale)}" to "${truncate(hit.a.q.question_text, 110)}" and "${label(hit.b.scale)}" to "${truncate(hit.b.q.question_text, 110)}".`
+}
+
+/** Nearly every rated answer identical (>= 85% of at least 10): returns a note, else ''. */
+export function straightliningNote(responses: ResponseLite[] | undefined, questions: QuestionLite[] | undefined): string {
+  if (!responses?.length || !questions?.length) return ''
+  const qById = new Map(questions.map(q => [q.id, q]))
+  const scales = responses
+    .filter(r => qById.get(r.question_id)?.question_type === 'frequency')
+    .map(r => num(r.response_scale))
+    .filter((n): n is number => n !== null && n >= 1 && n <= 5)
+  if (scales.length < 10) return ''
+  const counts = new Map<number, number>()
+  for (const n of scales) counts.set(n, (counts.get(n) ?? 0) + 1)
+  return Math.max(...counts.values()) / scales.length >= 0.85 ? STRAIGHTLINE_NOTE : ''
+}
+
 export function flagText(
   pillar: CorePillar,
   flag: string | undefined,
   responses?: ResponseLite[],
   questions?: QuestionLite[],
+  writtenByKeyword = false,
 ): string {
   if (!flag || flag === 'none') return ''
   const name = PILLAR_DISPLAY_NAMES[pillar]
+  const clash = contradictionDetail(pillar, responses, questions)
+  const gap = writtenByKeyword ? '' : frequencyVsWrittenDetail(pillar, responses, questions)
+  // The flag may have come from contradictory ratings rather than rating-vs-writing. Say which.
+  if (clash && !gap) return FLAG_CONTRADICTION.replace('{name}', name).replace('{detail}', clash)
+  if (writtenByKeyword) return FLAG_KEYWORD.replace('{name}', name)
   const base = (flag === 'significant' ? FLAG_SIGNIFICANT : FLAG_MINOR).replace('{name}', name)
-  const detail = frequencyVsWrittenDetail(pillar, responses, questions)
-  return detail ? `${base} ${detail}` : base
+  const withGap = gap ? `${base} ${gap}` : base
+  return clash ? `${withGap} Separately: ${clash}` : withGap
 }
 
 // ── Band position ──────────────────────────────────────────────────────
@@ -262,6 +318,8 @@ export interface PillarPortraitInput {
   integrityFlag?: string
   responses?: ResponseLite[]
   questions?: QuestionLite[]
+  /** Written answers were scored by the keyword heuristic, not by an AI reading. */
+  writtenByKeyword?: boolean
 }
 
 export function buildPillarPortrait(input: PillarPortraitInput): PillarPortrait {
@@ -275,13 +333,13 @@ export function buildPillarPortrait(input: PillarPortraitInput): PillarPortrait 
 
   const base = portraitBank[pillar][descriptor]
   const note = positionNote(score, descriptor)
-  const evidence = buildEvidence(pillar, input.responses, input.questions)
+  const evidence = buildEvidence(pillar, input.responses, input.questions, input.writtenByKeyword)
 
   return {
     portrait: fillTokens([base, note].filter(Boolean).join(' '), track),
     action: fillTokens(actionBank[pillar][descriptor], track),
     evidence,
-    flagText: flagText(pillar, input.integrityFlag, input.responses, input.questions),
+    flagText: flagText(pillar, input.integrityFlag, input.responses, input.questions, input.writtenByKeyword),
   }
 }
 
@@ -292,6 +350,8 @@ export interface Overview {
   ground: string
   patterns: string[]
   flagsNote: string
+  /** Set when nearly every rating was the same answer. */
+  ratingNote: string
 }
 
 type Scores = Partial<Record<string, number>>
@@ -345,6 +405,8 @@ export interface OverviewInput {
   scores: Scores
   overall: number
   integrityFlags?: Record<string, string>
+  responses?: ResponseLite[]
+  questions?: QuestionLite[]
 }
 
 export function buildOverview(input: OverviewInput): Overview {
@@ -369,7 +431,7 @@ export function buildOverview(input: OverviewInput): Overview {
     ? `${flagged.length === 1 ? 'One area carries' : `${flagged.length} areas carry`} a flag (⚑ below): a place where what you said about yourself in general did not fully match how you answered about a specific situation. These are often the most useful places to start a conversation.`
     : ''
 
-  return { opening, ground, patterns, flagsNote }
+  return { opening, ground, patterns, flagsNote, ratingNote: straightliningNote(input.responses, input.questions) }
 }
 
 // ── First thirty days ──────────────────────────────────────────────────

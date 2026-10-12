@@ -1,14 +1,22 @@
 'use client'
 // app/(public)/taster/page.tsx
-// 6-question formation diagnostic — no auth required, no DB writes.
-// Shows a full result for 2 of the eight pillars, then gates one more
-// pillar behind registration. Questions are drawn verbatim from the real
-// married-track question bank (supabase/migrations/003_questions_seed_married.sql)
-// so the teaser reflects the actual assessment rather than invented content.
+// 6-question formation taster — no auth required, no DB writes.
+// Shows a full result for 2 of the 3 areas it asks about and teases the third,
+// then points at the full assessment and a public sample report.
+//
+// Written for three situations (married / engaged or dating / single and
+// preparing). The result is built by the same offline report engine as the full
+// report (lib/report/offline-portrait.ts), so the taster is a genuine slice of
+// the real thing: a portrait, the person's own answers shown back to them, and
+// one thing to do this week. Married and premarital questions are drawn from
+// the married-track bank (supabase/migrations/003); readiness questions from
+// the readiness bank (006).
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { scoreFrequency } from '@/lib/scoring/aggregate'
+import { scoreFrequency, descriptorFromScore, type CorePillar } from '@/lib/scoring/aggregate'
+import { buildPillarPortrait, type QuestionLite, type ResponseLite } from '@/lib/report/offline-portrait'
+import { questionsFor, splitFirstSentence, TRACK_CHOICES, type Track } from '@/lib/taster'
 
 // Same five labelled choices, and the same 1-5 -> 0/25/50/75/100 mapping, as the
 // real assessment (app/(participant)/assessment/page.tsx + lib/scoring/aggregate.ts),
@@ -23,56 +31,6 @@ const SCALE_LABELS = [
   { value: 5, label: 'Almost always' },
 ]
 
-type Question = { id: string; pillar: string; text: string; low: string; high: string; invert?: boolean }
-
-// 2 questions each for 3 of the 8 pillars — real frequency statements from
-// the married-track question bank, codes CF_FR_01/CF_FR_02 analogue,
-// TC_FR_01/TC_FR_02, CR_FR_01/CR_FR_02.
-const QUESTIONS: Question[] = [
-  {
-    id: 'cf1',
-    pillar: 'covenant_faithfulness',
-    text: 'When keeping a promise to my spouse becomes inconvenient, I keep it anyway.',
-    low: 'Rarely — convenience usually wins',
-    high: 'Always — the promise simply holds',
-  },
-  {
-    id: 'cf2',
-    pillar: 'covenant_faithfulness',
-    text: 'My deepest values and my spouse’s actually line up — not just our calendars.',
-    low: 'We have never really talked it through',
-    high: 'Yes, and we have tested it, not just assumed it',
-  },
-  {
-    id: 'tc1',
-    pillar: 'truthful_communication',
-    text: 'What I tell my spouse matches what I actually think and feel, even when the truth is uncomfortable.',
-    low: 'I often soften or withhold it',
-    high: 'I say the true thing, even at real cost',
-  },
-  {
-    id: 'tc2',
-    pillar: 'truthful_communication',
-    text: 'I bring up problems in our marriage directly with my spouse rather than venting to someone else first.',
-    low: 'Problems usually go to someone else first',
-    high: 'My spouse is reliably the first person I bring it to',
-  },
-  {
-    id: 'cr1',
-    pillar: 'conflict_repair',
-    text: 'After my spouse and I argue, we actually resolve it — not just stop talking about it.',
-    low: 'We mostly settle into an unspoken truce',
-    high: 'We reliably reach real repair, not just a ceasefire',
-  },
-  {
-    id: 'cr2',
-    pillar: 'conflict_repair',
-    text: 'I am the one who initiates repair after a conflict at least as often as my spouse is.',
-    low: 'I usually wait for my spouse to go first',
-    high: 'I initiate readily, regardless of who "should"',
-  },
-]
-
 const PILLAR_NAMES: Record<string, string> = {
   covenant_faithfulness: 'Covenant Faithfulness',
   truthful_communication: 'Truthful Communication',
@@ -85,14 +43,6 @@ const PILLAR_ANCHOR: Record<string, string> = {
   conflict_repair: 'Eirene (Greek)',
 }
 
-function getDescriptor(score: number): string {
-  if (score >= 85) return 'christformed'
-  if (score >= 70) return 'rooted'
-  if (score >= 50) return 'growing'
-  if (score >= 30) return 'awakening'
-  return 'unengaged'
-}
-
 const DESCRIPTOR_COLORS: Record<string, string> = {
   christformed: '#2C5F2E',
   rooted: '#4A7A4A',
@@ -101,129 +51,136 @@ const DESCRIPTOR_COLORS: Record<string, string> = {
   unengaged: '#8B2020',
 }
 
-const TASTER_PORTRAITS: Record<string, Record<string, { headline: string; body: string }>> = {
-  covenant_faithfulness: {
-    christformed: {
-      headline: 'Your word to your spouse holds regardless of what it costs.',
-      body: 'That is rare, and it is the foundation everything else in a marriage is built on. The question worth sitting with now is whether your spouse experiences it that reliably too — faithfulness felt by only one side of a marriage is still a gap, even when the other side is genuinely strong.',
-    },
-    rooted: {
-      headline: 'Your faithfulness holds in most conditions, with one place it quietly bends.',
-      body: 'You keep your word under ordinary pressure. The real test is the specific situation where keeping it costs something you were not expecting — that is usually where the gap actually lives, not in the general pattern.',
-    },
-    growing: {
-      headline: 'The commitment is real. The consistency under real cost is not yet there.',
-      body: 'Your answers describe a genuine intention to keep your word, and a pattern of it bending when the cost becomes real rather than hypothetical. That gap is the honest starting point — not a verdict on the marriage.',
-    },
-    awakening: {
-      headline: 'You know what faithfulness should look like. The habit under pressure is not yet formed.',
-      body: 'This is common and workable. Start smaller than feels sufficient: one specific promise, kept once, at real cost — not a general resolve to be more faithful.',
-    },
-    unengaged: {
-      headline: 'Your answers describe promises that bend whenever keeping them is inconvenient.',
-      body: 'Naming that honestly, without defending it, is the entire first step. Your Formation Guide will address this directly — it is usually not a willingness problem, it is a habit that has not been built yet.',
-    },
-  },
-  truthful_communication: {
-    christformed: {
-      headline: 'What you tell your spouse is what is actually true and felt.',
-      body: 'Not a managed version. Not a softened one. Watch whether that honesty has itself become something you expect credit for — that is its own subtle gap.',
-    },
-    rooted: {
-      headline: 'You are honest with your spouse. You still edit sometimes.',
-      body: 'You rarely lie outright, but you choose which true things to say and when, calibrated to avoid friction. The work is noticing the moments you are editing and asking what you are actually protecting.',
-    },
-    growing: {
-      headline: 'You are honest when it is easy. Less so when the truth would cost something.',
-      body: 'Your answers showed real transparency in low-stakes moments and something different when honesty would create real friction. That specific condition — not honesty in general — is where the work is.',
-    },
-    awakening: {
-      headline: 'There is a real gap between what you believe about honesty and what you actually say.',
-      body: 'That gap is the data, not a character verdict. The starting point is one conversation where you say the uncomfortable true thing instead of the comfortable almost-true one.',
-    },
-    unengaged: {
-      headline: 'Your answers describe a consistent pattern of managing what your spouse hears.',
-      body: 'This is common in marriages under pressure — directness starts to feel dangerous. The cost is that your spouse is responding to a version of the truth that is not fully real. Small honesty first, not a big confession.',
-    },
-  },
-}
-
-const GATED_PORTRAIT = 'Your answers in Conflict & Repair showed a specific pattern. The full report names what it is, what it costs the marriage, and one thing to bring to your Formation Guide. Register to complete the full assessment and unlock it.'
+const FREE_PILLARS: CorePillar[] = ['covenant_faithfulness', 'truthful_communication']
+const GATED_PILLAR: CorePillar = 'conflict_repair'
 
 type Phase = 'intro' | 'questions' | 'result'
 
 export default function TasterPage() {
   const [phase, setPhase] = useState<Phase>('intro')
+  const [track, setTrack] = useState<Track | null>(null)
   const [current, setCurrent] = useState(0)
-  const [answers, setAnswers] = useState<Record<string, number>>({})
+  const [answers, setAnswers] = useState<Record<string, number>>({})   // question id -> 1..5
   const [selected, setSelected] = useState<number | null>(null)
+
+  const QUESTIONS = questionsFor(track ?? 'married')
+  const isReadiness = track === 'readiness'
+  const sampleHref = isReadiness ? '/sample-report?track=readiness' : '/sample-report'
 
   function handleNext() {
     if (selected === null) return
     const q = QUESTIONS[current]
-    setAnswers(prev => ({ ...prev, [q.id]: scoreFrequency(selected, false) }))
+    setAnswers(prev => ({ ...prev, [q.id]: selected }))
     setSelected(null)
     if (current + 1 >= QUESTIONS.length) setPhase('result')
     else setCurrent(c => c + 1)
   }
 
-  function computeScores(): Record<string, number> {
-    const byPillar: Record<string, number[]> = {}
-    for (const q of QUESTIONS) {
-      const v = answers[q.id]
-      if (v === undefined) continue
-      if (!byPillar[q.pillar]) byPillar[q.pillar] = []
-      byPillar[q.pillar].push(v)
-    }
-    const result: Record<string, number> = {}
-    for (const [p, scores] of Object.entries(byPillar)) {
-      result[p] = scores.reduce((a, b) => a + b, 0) / scores.length
-    }
-    return result
+  // 0-100 score per pillar, the same mapping the real assessment uses.
+  function pillarScore(pillar: CorePillar): number {
+    const vals = QUESTIONS.filter(q => q.pillar === pillar && answers[q.id] !== undefined).map(q => scoreFrequency(answers[q.id], false))
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 50
   }
 
-  const scores = computeScores()
-  const progress = ((current + 1) / QUESTIONS.length) * 100
-  const q = QUESTIONS[current]
+  function portraitFor(pillar: CorePillar) {
+    const score = pillarScore(pillar)
+    const questions: QuestionLite[] = QUESTIONS.map(q => ({ id: q.id, pillar: q.pillar, question_type: 'frequency', question_text: q.text }))
+    const responses: ResponseLite[] = QUESTIONS.filter(q => answers[q.id] !== undefined).map(q => ({
+      question_id: q.id, response_scale: answers[q.id], computed_score: scoreFrequency(answers[q.id], false),
+    }))
+    return {
+      score,
+      descriptor: descriptorFromScore(score),
+      out: buildPillarPortrait({ pillar, track: track ?? 'married', score, descriptor: descriptorFromScore(score), responses, questions }),
+    }
+  }
 
+  // ── Intro ────────────────────────────────────────────────────────────
   if (phase === 'intro') {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'var(--bg-primary)' }}>
+      <div className="min-h-screen flex items-center justify-center px-4 py-12" style={{ background: 'var(--bg-primary)' }}>
         <div className="max-w-2xl w-full text-center">
           <p className="pillar-number tracking-[0.4em] mb-6" style={{ color: 'var(--gold-muted)' }}>
             FORMATION DIAGNOSTIC
           </p>
           <h1 className="font-display text-4xl md:text-5xl font-bold mb-6" style={{ color: 'var(--text-primary)', lineHeight: '1.05' }}>
-            Six questions.<br />Two pillars revealed.
+            Six questions.<br />Two areas revealed.
           </h1>
-          <p className="formation-prose text-lg mb-4 max-w-xl mx-auto" style={{ lineHeight: '1.9' }}>
-            This is a free taster of the real Covenant Formation Assessment, drawn from the actual
-            question bank. It covers three of the eight pillars with two questions each. When you
-            finish, you will see a full formation portrait for two of them — and a locked preview
-            of the third.
+          <p className="formation-prose text-lg mb-8 max-w-xl mx-auto" style={{ lineHeight: '1.9' }}>
+            A free taste of the real Covenant Formation assessment, drawn from its actual questions.
+            You will answer six, about three of the eight areas. At the end you get a full written
+            portrait for two of them, your own answers shown back to you, and one thing to try this
+            week. The third is previewed, and the rest is in the full report.
           </p>
-          <p className="text-sm mb-12" style={{ color: 'var(--text-faint)' }}>
-            No account required. Takes about 2 minutes. This is a solo preview — the real
-            assessment is taken independently by each spouse, and the report that matters is the
-            comparison between the two.
+
+          <p className="text-xs uppercase tracking-widest mb-3 font-bold" style={{ color: 'var(--text-faint)' }}>
+            Which of these is closest to you?
           </p>
-          <button onClick={() => setPhase('questions')} className="btn-gold text-lg px-12 py-4">
+          <div role="radiogroup" aria-label="Your situation" className="space-y-2 mb-10 text-left">
+            {TRACK_CHOICES.map(c => {
+              const on = track === c.value
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setTrack(c.value)}
+                  className="w-full p-4 transition-all"
+                  style={{
+                    background: on ? 'rgba(184,151,42,0.1)' : 'var(--bg-elevated)',
+                    border: on ? '1px solid var(--gold)' : '1px solid var(--bg-border)',
+                    borderRadius: '2px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span className="block font-display text-base font-semibold" style={{ color: on ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{c.title}</span>
+                  <span className="block text-xs mt-1" style={{ color: 'var(--text-faint)' }}>{c.sub}</span>
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            onClick={() => track && setPhase('questions')}
+            disabled={!track}
+            className="btn-gold text-lg px-12 py-4"
+            style={!track ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+          >
             Begin →
           </button>
           <p className="mt-5 text-xs" style={{ color: 'var(--text-faint)' }}>
-            Free · No card · No account
+            Free · No card · No account · About 2 minutes
+          </p>
+          <p className="mt-3 text-xs">
+            <Link href={sampleHref} style={{ color: 'var(--gold-muted)', textDecoration: 'underline' }}>
+              Or look at a sample full report first
+            </Link>
           </p>
         </div>
       </div>
     )
   }
 
+  // ── Result ───────────────────────────────────────────────────────────
   if (phase === 'result') {
-    const FREE_PILLARS = ['covenant_faithfulness', 'truthful_communication']
-    const GATED_PILLAR = 'conflict_repair'
-    const gatedScore = scores[GATED_PILLAR] ?? 50
-    const gatedDescriptor = getDescriptor(gatedScore)
-    const gatedColor = DESCRIPTOR_COLORS[gatedDescriptor]
+    const gated = portraitFor(GATED_PILLAR)
+    const gatedColor = DESCRIPTOR_COLORS[gated.descriptor]
+    const gatedHead = splitFirstSentence(gated.out.portrait).head
+
+    const fullReportAdds = isReadiness
+      ? [
+          'All eight areas, each with its own portrait and what it predicts for a future marriage',
+          'Your own answers shown back to you in every area, and where your words and your ratings disagree',
+          'One specific thing to do this week in each area, and a first-month plan in priority order',
+          'Patterns across areas that no single question can show',
+        ]
+      : [
+          'All eight areas, each with its own portrait, not just three',
+          'Your own answers shown back to you in every area, and where your words and your ratings disagree',
+          'One specific thing to do this week in each area, and a first-month plan in priority order',
+          `The comparison between you and your ${track === 'premarital' ? 'partner' : 'spouse'}: where you see it the same way, and where you do not`,
+        ]
 
     return (
       <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -234,19 +191,28 @@ export default function TasterPage() {
               TASTER RESULTS
             </p>
             <h1 className="font-display text-4xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
-              Your formation portrait.
+              Your portrait, so far.
             </h1>
             <p className="text-sm max-w-lg mx-auto" style={{ color: 'var(--text-muted)', lineHeight: '1.8' }}>
-              Two pillars are shown in full below. One is locked — visible in your complete report
-              after registration, alongside the other five and the Perception Gap with your spouse.
+              Two areas are shown in full below, with what your own answers said. A third is
+              previewed. The full report covers all eight.
             </p>
           </div>
 
           {FREE_PILLARS.map(pillar => {
-            const score = scores[pillar] ?? 50
-            const descriptor = getDescriptor(score)
+            const { score, descriptor, out } = portraitFor(pillar)
             const color = DESCRIPTOR_COLORS[descriptor]
-            const portrait = TASTER_PORTRAITS[pillar]?.[descriptor]
+            const { head, rest } = splitFirstSentence(out.portrait)
+            const ev = out.evidence
+            const contrast = [
+              ev.holds ? { label: ev.holds.score >= 60 ? 'Where this holds' : 'Your strongest answer here', statement: ev.holds.statement, answerLabel: ev.holds.answerLabel } : null,
+              ev.slips ? { label: ev.slips.score >= 70 ? 'Where there is most room to grow' : 'Where it slips', statement: ev.slips.statement, answerLabel: ev.slips.answerLabel } : null,
+            ].filter((r): r is { label: string; statement: string; answerLabel: string | null } => r !== null)
+            // Two answers in the same place: show both as they are, rather than invent a contrast.
+            const rows = contrast.length > 0 ? contrast : QUESTIONS
+              .filter(qq => qq.pillar === pillar && answers[qq.id] !== undefined)
+              .map(qq => ({ label: '', statement: qq.text, answerLabel: SCALE_LABELS[answers[qq.id] - 1]?.label ?? null }))
+
             return (
               <div key={pillar} className="eikon-card p-8" style={{ borderTop: `2px solid ${color}` }}>
                 <div className="flex items-start justify-between flex-wrap gap-4 mb-5">
@@ -259,7 +225,7 @@ export default function TasterPage() {
                     </h2>
                   </div>
                   <div className="text-right">
-                    <p className="font-display text-4xl font-bold" style={{ color }}>{Math.round(score)}</p>
+                    <p className="font-display text-4xl font-bold" style={{ color }}>{score}</p>
                     <p className="text-xs font-bold uppercase tracking-wider mt-1" style={{ color }}>
                       {descriptor}
                     </p>
@@ -270,69 +236,121 @@ export default function TasterPage() {
                   <div className="h-full" style={{ width: `${score}%`, background: color, opacity: 0.8 }} />
                 </div>
 
-                {portrait && (
-                  <>
-                    <p className="text-xs uppercase tracking-widest mb-3 font-bold" style={{ color: 'var(--text-faint)' }}>
-                      What your answers revealed
-                    </p>
-                    <p className="font-display text-lg font-semibold mb-4" style={{ color: 'var(--text-secondary)' }}>
-                      {portrait.headline}
-                    </p>
-                    <p className="formation-prose text-base" style={{ lineHeight: '1.9' }}>
-                      {portrait.body}
-                    </p>
-                  </>
+                <p className="text-xs uppercase tracking-widest mb-3 font-bold" style={{ color: 'var(--text-faint)' }}>
+                  What your answers revealed
+                </p>
+                <p className="font-display text-lg font-semibold mb-4" style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                  {head}
+                </p>
+                {rest && (
+                  <p className="formation-prose text-base mb-6" style={{ lineHeight: '1.9' }}>
+                    {rest}
+                  </p>
                 )}
+
+                {rows.length > 0 && (
+                  <div className="mb-6 px-5 pt-4 pb-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--bg-border)' }}>
+                    <p className="text-xs uppercase tracking-widest font-bold mb-2" style={{ color: 'var(--text-faint)' }}>
+                      From your own answers
+                    </p>
+                    {rows.map(r => (
+                      <div key={r.statement} className="py-3" style={{ borderTop: '1px solid var(--bg-border)' }}>
+                        {r.label && <p className="text-xs uppercase tracking-widest font-bold mb-1" style={{ color: 'var(--gold-muted)' }}>{r.label}</p>}
+                        <p className="text-sm italic mb-1" style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>&ldquo;{r.statement}&rdquo;</p>
+                        {r.answerLabel && (
+                          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>You answered <strong>{r.answerLabel}</strong>.</p>
+                        )}
+                      </div>
+                    ))}
+                    {ev.consistent && (
+                      <p className="text-xs italic py-3" style={{ color: 'var(--text-faint)', borderTop: '1px solid var(--bg-border)', lineHeight: '1.7' }}>
+                        Your two answers here point the same way, which makes the picture above easier to trust.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="p-4" style={{ background: 'rgba(74,122,74,0.06)', borderLeft: '3px solid #4A7A4A' }}>
+                  <p className="text-xs uppercase tracking-widest font-bold mb-2" style={{ color: '#4A7A4A' }}>
+                    {isReadiness ? 'One thing to do this week' : 'Together this week'}
+                  </p>
+                  <p className="text-sm" style={{ color: 'var(--text-muted)', lineHeight: '1.75' }}>{out.action}</p>
+                </div>
               </div>
             )
           })}
 
-          {/* Gated pillar */}
+          {/* Preview of the third area, then the way in */}
           <div className="eikon-card p-8" style={{ borderTop: '2px solid var(--bg-border)' }}>
             <p className="pillar-number text-xs mb-4" style={{ color: 'var(--gold-muted)' }}>
-              LOCKED — CONFLICT &amp; REPAIR, PLUS 5 MORE PILLARS
+              PREVIEW — {PILLAR_NAMES[GATED_PILLAR].toUpperCase()}, PLUS 5 MORE AREAS IN THE FULL REPORT
             </p>
             <div className="mb-8">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-display font-medium" style={{ color: 'var(--text-muted)' }}>
+                <span className="text-sm font-display font-medium" style={{ color: 'var(--text-secondary)' }}>
                   {PILLAR_NAMES[GATED_PILLAR]}
                 </span>
                 <span className="text-xs font-bold uppercase tracking-wider" style={{ color: gatedColor }}>
-                  {gatedDescriptor}
+                  {gated.descriptor}
                 </span>
               </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-border)' }}>
-                <div className="h-full blur-sm" style={{ width: `${gatedScore}%`, background: gatedColor, opacity: 0.6 }} />
+              <div className="h-1.5 rounded-full overflow-hidden mb-5" style={{ background: 'var(--bg-border)' }}>
+                <div className="h-full" style={{ width: `${gated.score}%`, background: gatedColor, opacity: 0.8 }} />
               </div>
-              <p className="text-xs mt-1 line-clamp-2 blur-sm select-none" style={{ color: 'var(--text-faint)' }}>
-                {GATED_PORTRAIT.slice(0, 80)}…
+              <p className="font-display text-lg font-semibold mb-3" style={{ color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                {gatedHead}
+              </p>
+              <div aria-hidden="true" className="space-y-2 select-none" style={{ filter: 'blur(5px)' }}>
+                <div className="h-3 rounded" style={{ background: 'var(--bg-border)', width: '100%' }} />
+                <div className="h-3 rounded" style={{ background: 'var(--bg-border)', width: '92%' }} />
+                <div className="h-3 rounded" style={{ background: 'var(--bg-border)', width: '78%' }} />
+              </div>
+              <p className="text-xs mt-3" style={{ color: 'var(--text-faint)' }}>
+                The rest of this area, what it costs, and what to do about it are in the full report.
               </p>
             </div>
 
             <div className="gold-rule mb-8" />
 
             <p className="font-display text-xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
-              The full assessment covers all eight pillars — taken independently by each spouse.
+              This was six questions. The full assessment goes much further.
             </p>
+            <ul className="space-y-2 mb-8">
+              {fullReportAdds.map(t => (
+                <li key={t} className="text-sm flex gap-3" style={{ color: 'var(--text-muted)', lineHeight: '1.7' }}>
+                  <span style={{ color: 'var(--gold)' }}>›</span>
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
             <p className="text-sm mb-8" style={{ color: 'var(--text-muted)', lineHeight: '1.8' }}>
-              Your complete report includes a full formation portrait for every pillar, and — once
-              your spouse has also finished — the Perception Gap: a side-by-side look at where your
-              two sets of answers agree, and where they don't. The assessment is free to take.
+              {isReadiness
+                ? 'The readiness assessment is 48 questions and takes about 15 to 18 minutes. It is free to take, and no card is needed.'
+                : 'The full assessment is 66 questions and takes about 25 to 30 minutes. It is free to take, and no card is needed. Each of you answers on your own account, so neither of you is performing for the other.'}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Link href="/register?from=taster" className="btn-gold text-base px-8 py-3">
                 Complete the Full Assessment →
               </Link>
-              <Link href="/" className="btn-ghost">
-                Learn more about Covenant Formation
+              <Link href={sampleHref} className="btn-ghost">
+                See a sample full report
               </Link>
             </div>
+            <p className="mt-6 text-xs">
+              <Link href="/" style={{ color: 'var(--text-faint)', textDecoration: 'underline' }}>
+                Learn more about Covenant Formation
+              </Link>
+            </p>
           </div>
 
         </div>
       </div>
     )
   }
+
+  // ── Questions ────────────────────────────────────────────────────────
+  const q = QUESTIONS[current]
+  const progress = ((current + 1) / QUESTIONS.length) * 100
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>

@@ -301,20 +301,20 @@ export default function OnboardingPage() {
             <div className="formation-prose space-y-4">
               {pairingMode === 'solo' ? (
                 <>
-                  <p>The Readiness assessment contains thirty-two questions across the same eight covenant-formation domains.</p>
+                  <p>The Readiness assessment contains forty-eight questions across the same eight covenant-formation domains.</p>
                   <p>
                     It asks how you actually behave in your closest relationships right now — not
                     theory, but specific recent moments — because that is the clearest predictor of how
                     you will show up once you are married.
                   </p>
                   <p>
-                    It takes about twelve to fifteen minutes. You can pause and return at any point —
+                    It takes about fifteen to eighteen minutes. You can pause and return at any point —
                     your progress is saved automatically after each question.
                   </p>
                 </>
               ) : (
                 <>
-                  <p>The assessment contains fifty questions across eight covenant-formation domains.</p>
+                  <p>The assessment contains sixty-six questions across eight covenant-formation domains.</p>
                   <p>
                     You and your partner each take it on your own account, separately. Some
                     questions ask you to describe specific recent moments in your marriage
@@ -322,7 +322,7 @@ export default function OnboardingPage() {
                     happened the last time it was tested.
                   </p>
                   <p>
-                    It takes about twenty to twenty-five minutes. You can pause and return
+                    It takes about twenty-five to thirty minutes. You can pause and return
                     at any point — your progress is saved automatically after each question.
                   </p>
                 </>

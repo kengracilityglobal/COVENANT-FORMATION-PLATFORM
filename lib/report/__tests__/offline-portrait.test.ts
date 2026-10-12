@@ -115,6 +115,18 @@ describe('buildEvidence', () => {
     expect(ev.slips).toBeNull()
   })
 
+  it('with keyword-scored written answers: ranks frequency items only, never shows a rubric line for writing', () => {
+    const ev = buildEvidence('oneness', [
+      r('a', 100, { response_scale: 5 }), r('b', 25, { response_scale: 2 }), r('c', 95, { response_text: 'x', word_count: 90 }),
+    ], questions, true)
+    expect(ev.holds?.statement).toBe('We decide things together.')
+    expect(ev.slips?.statement).toBe('I check with my spouse first.')
+    expect([ev.holds, ev.slips].some(i => i?.kind === 'written')).toBe(false)
+    const onlyWritten = buildEvidence('oneness', [r('c', 95, { response_text: 'x' })], questions, true)
+    expect(onlyWritten.holds).toBeNull()
+    expect(onlyWritten.slips).toBeNull()
+  })
+
   it('degrades to empty with no data, never throws', () => {
     expect(buildEvidence('oneness', undefined, undefined).answered).toBe(0)
     expect(buildEvidence('oneness', [], questions).holds).toBeNull()
@@ -174,6 +186,12 @@ describe('buildPillarPortrait', () => {
     expect(out.flagText).toMatch(/I keep my promises\./)
     expect(out.flagText).toMatch(/almost always/)
     expect(buildPillarPortrait({ pillar: 'oneness', track: 'married', score: 50, descriptor: 'growing', integrityFlag: 'none' }).flagText).toBe('')
+    const hedged = buildPillarPortrait({
+      pillar: 'covenant_faithfulness', track: 'married', score: 55, descriptor: 'growing', integrityFlag: 'significant', writtenByKeyword: true,
+      questions, responses: [r('f', 100, { response_scale: 5 }), r('s', 20, { response_text: 'x' })],
+    }).flagText
+    expect(hedged).toMatch(/simple method/)
+    expect(hedged).not.toMatch(/I keep my promises|almost always/)
   })
 })
 
@@ -252,5 +270,54 @@ describe('escapeHtml', () => {
   it('neutralises markup in user-supplied text', () => {
     expect(escapeHtml('<script>alert("x")</script> & \'y\'')).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;')
     expect(escapeHtml(null)).toBe('')
+  })
+})
+
+// ── Contradictory ratings and straight-lining ────────────────────────────
+import { straightliningNote } from '../offline-portrait'
+
+describe('contradictory-rating flags and straight-lining', () => {
+  const cq = (id: string, text: string, reversed = false): QuestionLite => ({ id, pillar: 'covenant_faithfulness', question_type: 'frequency', question_text: text, scale_reversed: reversed })
+  const qs = [cq('p', 'I keep my promises when it costs me.'), cq('n', 'I quietly renegotiate what I agreed to.', true), cq('o', 'Other statement.')]
+
+  it('explains a flag that came from agreeing with a statement and its opposite', () => {
+    const out = buildPillarPortrait({
+      pillar: 'covenant_faithfulness', track: 'married', score: 50, descriptor: 'growing', integrityFlag: 'significant',
+      questions: qs, responses: [r('p', 100, { response_scale: 5 }), r('n', 0, { response_scale: 5 })],
+    })
+    expect(out.flagText).toMatch(/pull against each other/)
+    expect(out.flagText).toMatch(/"almost always" to "I keep my promises when it costs me\."/)
+    expect(out.flagText).toMatch(/"almost always" to "I quietly renegotiate/)
+    expect(out.flagText).not.toMatch(/general and how you answered when a real situation/)
+  })
+
+  it('still explains it correctly when written answers were keyword-scored', () => {
+    const out = buildPillarPortrait({
+      pillar: 'covenant_faithfulness', track: 'readiness', score: 50, descriptor: 'growing', integrityFlag: 'minor', writtenByKeyword: true,
+      questions: qs, responses: [r('p', 0, { response_scale: 1 }), r('n', 100, { response_scale: 1 })],
+    })
+    expect(out.flagText).toMatch(/pull against each other/)
+    expect(out.flagText).toMatch(/"never" to/)
+  })
+
+  it('does not call consistent answers a contradiction', () => {
+    const out = buildPillarPortrait({
+      pillar: 'covenant_faithfulness', track: 'married', score: 90, descriptor: 'christformed', integrityFlag: 'minor', writtenByKeyword: true,
+      questions: qs, responses: [r('p', 100, { response_scale: 5 }), r('n', 100, { response_scale: 1 })],
+    })
+    expect(out.flagText).not.toMatch(/pull against each other/)
+  })
+
+  it('notes when nearly every rating was the same answer, and only then', () => {
+    const many = (scales: number[]) => {
+      const questions = scales.map((_, i) => ({ id: `q${i}`, pillar: 'oneness', question_type: 'frequency', question_text: `S${i}` }) as QuestionLite)
+      const responses = scales.map((s, i) => r(`q${i}`, 50, { response_scale: s }))
+      return straightliningNote(responses, questions)
+    }
+    expect(many([5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5])).toMatch(/same answer to nearly every rating question/)
+    expect(many([4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5])).toMatch(/same answer/)
+    expect(many([5, 4, 3, 2, 1, 5, 4, 3, 2, 1, 5, 4])).toBe('')
+    expect(many([5, 5, 5, 5])).toBe('')
+    expect(straightliningNote(undefined, undefined)).toBe('')
   })
 })

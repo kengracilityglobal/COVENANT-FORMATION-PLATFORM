@@ -5,7 +5,7 @@ not ten, even though the brief it was built against named ten well-established
 relationship-research dimensions. This document records that decision
 honestly: nothing from the ten was dropped — each one was mapped into the
 pillar (or two) where it actually belongs, so the assessment stays short
-enough to finish (50 questions, ~20–25 minutes) without turning into a thin,
+enough to finish (originally 50 questions, ~20–25 minutes; 66 and ~25–30 since migration 007) without turning into a thin,
 half-covered 10-pillar instrument.
 
 ## Why eight pillars, not ten
@@ -39,7 +39,7 @@ questions and keeps every pillar substantive.
 
 ## The readiness track's question bank (singles, v1.1)
 
-The married track's 50 questions assume an existing marriage to report on
+The married track's questions assume an existing marriage to report on
 ("how reliably do you actually show up for your spouse"). They are not
 reused for the solo Readiness track added in v1.1, because a single person
 has no marriage to report on yet — asking them anyway would either force
@@ -50,8 +50,8 @@ dedicated 32-question bank (4 per pillar: 2 frequency + 1 scenario + 1
 reflective_disclosure, across the same 8 pillars above) worded around the
 person's own patterns and track record in their closest relationships —
 what they'd actually bring into a marriage — rather than a marriage that
-doesn't exist yet. Shorter than the married track (32 vs. 50 questions,
-~12–15 minutes) because a solo assessment is read against fewer honest
+doesn't exist yet. Shorter than the married track (48 vs. 66 questions,
+~15–18 minutes) because a solo assessment is read against fewer honest
 reference points than a married one. See `docs/VERIFICATION.md`'s v1.1
 section for how this bank was verified (seeded shape, real scoring-engine
 run, RLS coverage) and `lib/report/builder.ts`'s `PILLAR_COST_READINESS`/

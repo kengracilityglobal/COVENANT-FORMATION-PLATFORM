@@ -184,6 +184,7 @@ export async function runScoringEngine(
     if (!q) continue
     let score: number
     let kind: 'frequency' | 'written'
+    let byKeyword = false
     if (q.question_type === 'frequency') {
       kind = 'frequency'
       score = scoreFrequency(r.response_scale, q.scale_reversed)
@@ -196,11 +197,15 @@ export async function runScoringEngine(
         score = llmScores[q.code]
       } else {
         score = keywordScoreWritten(r.response_text ?? '')
+        byKeyword = true
         fallbackCount++
       }
       if (words < SHORT_ANSWER_WORDS) score = Math.min(score, SHORT_ANSWER_CAP)
     }
-    items.push({ responseId: r.id, questionId: r.question_id, code: q.code, pillar: q.pillar as PillarName, kind, score })
+    items.push({
+      responseId: r.id, questionId: r.question_id, code: q.code, pillar: q.pillar as PillarName, kind, score,
+      byKeyword, scale: kind === 'frequency' ? r.response_scale : null, reversed: kind === 'frequency' ? !!q.scale_reversed : undefined,
+    })
   }
 
   const agg = aggregate(items, questions)

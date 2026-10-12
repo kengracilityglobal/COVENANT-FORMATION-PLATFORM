@@ -225,10 +225,9 @@ pass:
   right after an assessment is scored, and again best-effort when a
   participant opens their report; there is no scheduled retry sweep for
   the rare case both of those attempts fail.
-- **Premarital track content** — the schema, types, and scoring engine
-  all support `track = 'premarital'` architecturally, but only the
-  married track's 50 questions have actually been written and seeded.
-  A couple selecting the premarital track today would see zero questions.
+- **Premarital track content** — written and seeded in migration 009 (66
+  questions). Until then, choosing the premarital track at onboarding
+  would have started an assessment with no questions.
 - **Cohorts, disciplines/pathway, journal, guide certification/health-checks,
   accountability-review / session-protocols** — all EIKON subsystems, not
   rebuilt for the dyadic model. Nothing in this codebase references them.
@@ -544,13 +543,79 @@ Other fixes made in the same pass:
   fruit reflections, AI text) is now HTML-escaped.
 - Migration 004 uses `ADD VALUE IF NOT EXISTS` so it can be re-run.
 
-Verified: `npx vitest run` (77 tests: copy completeness, no framework
+The taster and a public sample were rebuilt on the same engine:
+
+- The taster asks which of three situations the person is in (married,
+  engaged or dating, single and preparing) and shows matching wording. Its
+  six questions are verbatim from the real banks (a test checks this
+  against migrations 003 and 006). Answers use the same five labelled
+  choices and the same scoring as the full assessment; there is no slider.
+- Its result shows a real portrait for two areas, the person's own answers
+  back to them, and one thing to do this week. The third area shows its
+  actual opening sentence for that person; the remainder is a blurred
+  placeholder, so the hidden text is never sent to the browser.
+- `/sample-report` (public, no database) renders a fictional full report
+  through the real builder from invented answers (`lib/report/sample.ts`):
+  `/sample-report` for a married couple with the gap reading,
+  `/sample-report?track=readiness` for a single person. It is labelled as
+  an example at the top and bottom. `/sample-report` was added to
+  `PUBLIC_PATHS` in `middleware.ts`.
+- The taster was click-tested in a simulated browser (jsdom) for all three
+  situations during the build; that test is not kept in the repo because it
+  needs extra dev dependencies (jsdom, @testing-library/react).
+
+Verified: `npx vitest run` (85 tests: copy completeness, no framework
 jargon, sentence length, no duplicate paragraphs, token resolution per
 track, evidence selection, patterns, gap reading, escaping, and full
 report renders for all three tracks including a fuzz across every score
 level) and `tsc --noEmit`. Not verified: how it looks in a browser, and
 the live Supabase question lookup in `app/api/report/[assessmentId]/html`
 (it degrades to a report without evidence panels if that query fails).
+
+## v1.3: question banks and offline scoring
+
+Findings from reviewing whether the banks could do what the platform
+promises, and what changed:
+
+- **Premarital had no questions.** The track was selectable at onboarding.
+  Migration 009 seeds 66 (5 rated + 2 scenario + 1 reflective per area, plus
+  2 cross-pillar), derived from the married bank where the wording carries
+  over and written fresh where it does not: the 8 reflective questions look
+  forward (what has not been said, what is assumed, what is hoped will
+  change), and physical-intimacy questions are about boundaries and
+  expectations, not experience.
+- **Too few rated questions, all positively worded.** Migrations 007 and 008
+  add two reverse-worded rated questions per area (married and premarital 5
+  per area, readiness 4). Reverse-worded means "Almost always" is the worse
+  answer.
+- **`TC_FR_02` was scoring backwards** (positively worded, seeded reverse-
+  scored). Fixed in 003 for fresh installs and by an UPDATE in 007 for
+  databases already seeded. Assessments completed before the fix have a
+  Truthful Communication score computed the wrong way round and need
+  re-scoring.
+- **Offline scoring weighted a keyword counter at 60% of every area.**
+  Written answers carry weight 1.5 against 1 for ratings, and without an AI
+  scorer they are scored by counting cue words and length. Keyword-scored
+  writing now carries weight 0.25 (`WRITTEN_WEIGHT_KEYWORD`), takes no part in
+  integrity flags, and is never shown to the reader as if it had been judged
+  against the rubric.
+- **New integrity check: contradictory ratings.** Agreeing with a statement
+  and its reverse-worded opposite (or disagreeing with both) flags the area;
+  one clash is minor, two or more significant. Tapping the same answer all
+  the way down now trips it. The report explains the flag with the actual two
+  answers, and notes when nearly every rating was identical.
+
+Verified: migrations 001-009 applied in order to a real PostgreSQL 16, each
+file in one transaction (as the Supabase SQL editor runs it): final sizes
+married 66, premarital 66, readiness 48; sequence numbers contiguous per
+track; every rubric has 5 levels; all cross-references resolve; 007-009 re-run
+cleanly; 007 flips `TC_FR_02` on a database seeded with the old value.
+`npx vitest run` covers the banks (parsed from the SQL), the weighting and the
+new flag, and the report wording. Not verified: the full assessment UI against
+the new banks, and how long 66 questions actually takes a person. The 25-30
+minute figure scales the original estimate by the rated questions added; time
+a real run, because the original 50-question estimate counted 16 scenario and 9
+reflective questions that each need real writing.
 
 ## Architecture notes worth knowing before deploying
 

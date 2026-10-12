@@ -8,8 +8,9 @@
 -- docs/VERIFICATION.md for the honest scope note on this.
 --
 -- The PREMARITAL track (forward-looking "what have you not yet discussed"
--- framing) is NOT seeded here — deliberately deferred, not silently
--- missing. See docs/VERIFICATION.md.
+-- framing) is seeded separately in 009_questions_seed_premarital.sql.
+-- Migration 007 adds 16 more rated questions to this bank (and corrects
+-- the scoring direction of TC_FR_02 on databases seeded before the fix).
 --
 -- Distribution per pillar (x8 pillars):
 --   3 frequency + 2 scenario + 1 reflective_disclosure = 6
@@ -120,7 +121,7 @@ NULL, NULL, true),
 
 ('TC_FR_02','truthful_communication','married','frequency',13,
 'I bring up problems in our marriage directly with my spouse rather than venting to someone else first.',
-true,
+false,
 '{"unengaged":"Problems consistently go to others before they ever reach my spouse","awakening":"Often processed elsewhere first, raised with my spouse later if at all","growing":"Sometimes vents first, usually brings it to my spouse eventually","rooted":"Nearly always goes to my spouse first","christformed":"My spouse is reliably the first and primary person I bring a problem to"}'::jsonb,
 NULL, NULL, true),
 
