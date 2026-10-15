@@ -94,10 +94,9 @@ Running each file as its own SQL editor execution avoids this entirely.
    policies, the signup-role-hardening trigger, and the column-guard
    triggers that stop a participant from writing to server-only columns
    (role, scores, status, etc.) directly.
-3. `supabase/migrations/003_questions_seed_married.sql` — the 50-question
-   married-track question bank (8 pillars × 6 questions + 2 cross-pillar).
-   The premarital track is supported architecturally but has no seeded
-   questions yet — see `docs/VERIFICATION.md`.
+3. `supabase/migrations/003_questions_seed_married.sql` — the original
+   50-question married-track bank (8 pillars × 6 questions + 2
+   cross-pillar). Migration 007 grows it to 66.
 4. `supabase/migrations/004_readiness_track_enum.sql` — adds the solo
    `'readiness'` value to the `assessment_track` enum. Kept as its own
    migration, and must be run and committed before migration 005, for the
@@ -111,11 +110,45 @@ Running each file as its own SQL editor execution avoids this entirely.
    32-question readiness-track question bank (8 pillars × 4 questions),
    separate from the married bank.
 
-All six have been run clean, in order (each as its own execution, exactly
-as described above), against a real local Postgres 16 instance as part of
-this build (not just read by eye) — see `docs/VERIFICATION.md` for what
-that testing covered, including the v1.1 section for migrations 004–006
-specifically.
+7. `supabase/migrations/007_married_bank_expansion.sql` — 16 more rated
+   questions for the married bank (50 → 66), two reverse-worded per area,
+   and a correction to `TC_FR_02`, which was seeded scoring backwards.
+8. `supabase/migrations/008_readiness_bank_expansion.sql` — 16 more rated
+   questions for the readiness bank (32 → 48), two reverse-worded per area.
+9. `supabase/migrations/009_questions_seed_premarital.sql` — the 66-question
+   premarital bank. Before this the premarital track could be chosen at
+   onboarding but had no questions.
+
+10. `supabase/migrations/010_guide_for_solo_participants.sql` — lets a
+    Formation Guide be assigned to an individual (readiness-track)
+    participant, who has no couple. Uses the existing `profiles.guide_id`.
+
+Run each file as its own query. 007–010 are additive and safe to re-run.
+All ten were applied in order to a real Postgres 16, each file in a
+single transaction (which is how the Supabase SQL editor runs them), as
+part of this build — see `docs/VERIFICATION.md` (v1.3).
+
+## Roles, assigning guides, and demo data
+
+- **First admin:** register normally, then in the Supabase SQL editor run
+  `UPDATE profiles SET role = 'admin' WHERE email = 'you@example.com';`
+  and sign in again. (The database blocks anyone changing their own role.)
+- **Promote people:** Admin → Participants has a Role dropdown, or Admin →
+  Guides → Add Guide by email.
+- **Assign a guide:** on Admin → Participants, each participant has a Guide
+  dropdown. For someone in a couple it sets the couple's guide (both
+  partners); for an individual (readiness) participant it sets their own.
+  The guide then sees them on `/guide/dashboard`, couples and individuals
+  listed separately.
+- **One account per role.** An admin is sent to `/admin`, a guide to
+  `/guide/dashboard`, so testing all three sides needs separate accounts
+  (use a private window or another browser profile for each).
+- **Demo data:** `supabase/demo/001_demo_data.sql` creates 11 sign-in-able
+  accounts (2 guides, a married couple, a premarital couple, a pending
+  partner, three single people at different stages, one not started) with
+  finished assessments and reports. Password and the full list are in
+  `supabase/demo/README.md`. `002_remove_demo_data.sql` removes it all.
+  Regenerate with `npx tsx scripts/generate-demo-seed.ts`.
 
 ## 4. Supabase Auth configuration
 
@@ -151,7 +184,7 @@ Covenant Formation account).
    status with a generated invite code, and can start their own
    assessment immediately — they don't have to wait for Partner B.
 2. **Partner B joins** using the invite code; the couple becomes `active`.
-3. Each partner answers all 50 questions **independently** — neither sees
+3. Each partner answers all of the questions **independently** — neither sees
    the other's answers.
 4. On completion, the scoring engine (`lib/scoring/engine.ts`) scores each
    partner's responses into the 8 pillar scores (`lib/scoring/aggregate.ts`).

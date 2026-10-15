@@ -18,7 +18,10 @@ interface Participant {
   onboarding_completed: boolean
   couple_status: 'unpaired' | 'pending_partner' | 'active'
   latest_assessment: Assessment | null
+  assigned_guide_id?: string | null
+  guide_scope?: 'couple' | 'individual'
 }
+interface GuideOption { id: string; full_name: string; email: string }
 
 const COUPLE_STATUS_LABEL: Record<Participant['couple_status'], string> = {
   unpaired: 'Unpaired',
@@ -26,8 +29,9 @@ const COUPLE_STATUS_LABEL: Record<Participant['couple_status'], string> = {
   active: 'Paired',
 }
 
-export default function ParticipantRow({ participant }: { participant: Participant }) {
+export default function ParticipantRow({ participant, guides = [] }: { participant: Participant; guides?: GuideOption[] }) {
   const [role, setRole] = useState(participant.role)
+  const [guideId, setGuideId] = useState(participant.assigned_guide_id ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -95,6 +99,25 @@ export default function ParticipantRow({ participant }: { participant: Participa
           <option value="admin">Admin</option>
         </select>
       </div>
+
+      {participant.role === 'participant' && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs" style={{ color: 'var(--text-faint)' }}>
+            Guide{participant.guide_scope === 'couple' ? ' (couple)' : ''}
+          </label>
+          <select
+            value={guideId}
+            disabled={saving}
+            onChange={e => { const v = e.target.value; setGuideId(v); save({ guide_id: v === '' ? null : v }) }}
+            className="eikon-input text-xs py-1"
+          >
+            <option value="">None</option>
+            {guides.map(g => (
+              <option key={g.id} value={g.id}>{g.full_name || g.email}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <span className="text-xs capitalize" style={{ color: 'var(--text-faint)' }}>{participant.subscription_status}</span>
       {!participant.onboarding_completed && (

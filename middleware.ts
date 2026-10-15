@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-const PUBLIC_PATHS = ['/', '/login', '/register', '/auth/callback', '/auth/reset-password', '/auth/update-password', '/taster', '/privacy', '/terms']
+const PUBLIC_PATHS = ['/', '/login', '/register', '/auth/callback', '/auth/reset-password', '/auth/update-password', '/taster', '/sample-report', '/privacy', '/terms']
 
 // Server-to-server routes authenticated by a shared secret rather than a user
 // session (cron sweeps, payment webhooks, internal report/email triggers, and

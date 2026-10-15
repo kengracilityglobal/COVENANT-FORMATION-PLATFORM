@@ -53,14 +53,23 @@ export default async function GuideDashboardPage() {
     new Set((couples ?? []).flatMap(c => [c.partner_a_id, c.partner_b_id].filter(Boolean)))
   ) as string[]
 
+  // Individual (readiness-track) participants assigned to this guide directly on their profile.
+  const { data: soloRows } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .eq('guide_id', user.id)
+    .order('full_name', { ascending: true })
+  const solo = (soloRows ?? []).filter((p: any) => !partnerIds.includes(p.id))
+  const allIds = [...partnerIds, ...solo.map((p: any) => p.id)]
+
   const [{ data: profiles }, { data: assessments }] = await Promise.all([
     partnerIds.length
       ? supabase.from('profiles').select('id, full_name, email').in('id', partnerIds)
       : { data: [] as any[] },
-    partnerIds.length
+    allIds.length
       ? supabase.from('assessments')
           .select('participant_id, status, created_at')
-          .in('participant_id', partnerIds)
+          .in('participant_id', allIds)
           .order('created_at', { ascending: false })
       : { data: [] as any[] },
   ])
@@ -109,9 +118,10 @@ export default async function GuideDashboardPage() {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: 'Assigned Couples', value: couples?.length || 0, color: 'var(--text-primary)' },
+          { label: 'Individuals', value: solo.length, color: 'var(--text-primary)' },
           { label: 'Both Complete', value: bothCompleteCount, color: '#7ABF7C' },
           { label: 'Awaiting Partner', value: unpairedCount, color: '#D4AA4A' },
         ].map(stat => (
@@ -179,6 +189,43 @@ export default async function GuideDashboardPage() {
         ) : (
           <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
             No couples assigned yet.
+          </p>
+        )}
+      </div>
+
+      {/* Individual (readiness) participants */}
+      <div className="eikon-card p-6">
+        <p className="pillar-number text-xs mb-5" style={{ color: 'var(--gold-muted)' }}>YOUR INDIVIDUAL PARTICIPANTS</p>
+        {solo.length > 0 ? (
+          <div className="space-y-2">
+            {solo.map((p: any) => {
+              const status = latestStatusByParticipant.get(p.id) ?? 'not_started'
+              return (
+                <Link
+                  key={p.id}
+                  href={`/guide/participant/${p.id}`}
+                  className="flex items-center gap-4 p-4 transition-colors block flex-wrap"
+                  style={{ background: 'var(--bg-elevated)', borderRadius: '2px', border: '1px solid var(--bg-border)' }}
+                >
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0 font-display font-bold text-sm"
+                       style={{ background: 'var(--bg-card)', color: 'var(--gold)', borderRadius: '2px' }}>
+                    {(p.full_name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <p className="flex-1 min-w-[160px] font-display font-medium text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {p.full_name || p.email}
+                  </p>
+                  <span className="text-xs" style={{ color: 'var(--text-faint)' }}>Readiness · individual</span>
+                  <span className="text-xs font-bold" style={{ color: STATUS_COLORS[status] }}>
+                    {STATUS_LABELS[status] ?? status}
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--gold-muted)' }}>View →</span>
+                </Link>
+              )
+            })}
+          </div>
+        ) : (
+          <p className="text-sm" style={{ color: 'var(--text-faint)' }}>
+            No individual participants assigned yet.
           </p>
         )}
       </div>

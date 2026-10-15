@@ -33,6 +33,10 @@ export function descriptorFromScore(score: number): FormationDescriptor {
 
 /** Weight of a written answer relative to a frequency (Likert) answer. */
 export const WRITTEN_WEIGHT = 1.5
+/** Written answers scored by the offline keyword heuristic (no AI). That heuristic measures how
+ *  specific and candid the writing is, not what it says about the pillar, so it carries little
+ *  weight: the ratings decide the score and the heuristic only nudges it. */
+export const WRITTEN_WEIGHT_KEYWORD = 0.25
 export const FREQUENCY_WEIGHT = 1
 
 /** Gap (points) between self-reported frequency and written engagement that triggers a flag. */
@@ -46,6 +50,11 @@ export interface ScoredItem {
   pillar: PillarName
   kind: 'frequency' | 'written'
   score: number            // 0–100
+  /** Written answer scored by the keyword heuristic rather than an AI reading. */
+  byKeyword?: boolean
+  /** Rated items: the raw 1-5 answer, and whether the statement is reverse-worded. */
+  scale?: number | null
+  reversed?: boolean
 }
 
 export interface AggregateResult {
@@ -84,14 +93,16 @@ export function aggregate(items: ScoredItem[], questions: Question[]): Aggregate
   for (const p of CORE_PILLARS) { sums[p] = 0; weights[p] = 0; freqByPillar[p] = []; writtenByPillar[p] = [] }
 
   for (const it of items) {
-    const w = it.kind === 'written' ? WRITTEN_WEIGHT : FREQUENCY_WEIGHT
+    const w = it.kind === 'written' ? (it.byKeyword ? WRITTEN_WEIGHT_KEYWORD : WRITTEN_WEIGHT) : FREQUENCY_WEIGHT
     if (it.pillar === 'cross_pillar') {
       // Cross-pillar items contribute equally to every pillar's score.
       for (const p of CORE_PILLARS) { sums[p] += it.score * w; weights[p] += w }
     } else if ((CORE_PILLARS as readonly string[]).includes(it.pillar)) {
       sums[it.pillar] += it.score * w
       weights[it.pillar] += w
-      ;(it.kind === 'written' ? writtenByPillar : freqByPillar)[it.pillar].push(it.score)
+      // Keyword-scored writing is too crude to judge a rating against, so it takes no part in flags.
+      if (it.kind === 'written') { if (!it.byKeyword) writtenByPillar[it.pillar].push(it.score) }
+      else freqByPillar[it.pillar].push(it.score)
     }
   }
 
@@ -113,9 +124,31 @@ export function aggregate(items: ScoredItem[], questions: Question[]): Aggregate
     integrity_flags[p] = flag
   }
 
+  // Integrity flag 1b: contradictory ratings. Each area has positively worded rated statements
+  // and reverse-worded ones. Agreeing with both ("I keep my promises: almost always" and "I let
+  // promises slide: almost always"), or disagreeing with both, cannot be right, and it is the
+  // signature of answering without reading. Catches tapping the same answer all the way down.
+  const flags_by_response: Record<string, string[]> = {}
+  for (const p of CORE_PILLARS) {
+    const rated = items.filter(i => i.pillar === p && i.kind === 'frequency' && typeof i.scale === 'number')
+    const pos = rated.filter(i => !i.reversed)
+    const rev = rated.filter(i => i.reversed)
+    if (!pos.length || !rev.length) continue
+    const agree = (i: ScoredItem) => (i.scale as number) >= 4
+    const disagree = (i: ScoredItem) => (i.scale as number) <= 2
+    const clash = (test: (i: ScoredItem) => boolean) => ({ a: pos.filter(test), b: rev.filter(test) })
+    const hi = clash(agree)
+    const lo = clash(disagree)
+    const n = Math.max(Math.min(hi.a.length, hi.b.length), Math.min(lo.a.length, lo.b.length))
+    if (n === 0) continue
+    const level: FlagLevel = n >= 2 ? 'significant' : 'minor'
+    integrity_flags[p] = maxFlag(integrity_flags[p], level)
+    const involved = Math.min(hi.a.length, hi.b.length) >= Math.min(lo.a.length, lo.b.length) ? [...hi.a, ...hi.b] : [...lo.a, ...lo.b]
+    for (const it of involved) flags_by_response[it.responseId] = Array.from(new Set([...(flags_by_response[it.responseId] ?? []), 'contradictory_ratings']))
+  }
+
   // Integrity flag 2: explicit per-question cross-reference logic from the question bank
   // ("frequency_high_scenario_low"): claims to do X often, but the scenario answer shows otherwise.
-  const flags_by_response: Record<string, string[]> = {}
   const byCode = new Map(items.map(i => [i.code, i]))
   for (const q of questions) {
     const logic: any = q.integrity_flag_logic
@@ -126,7 +159,7 @@ export function aggregate(items: ScoredItem[], questions: Question[]): Aggregate
     const pair = [self, ...refs.map(c => byCode.get(c)).filter(Boolean) as ScoredItem[]]
     // The rule can be attached to either side of the pair, so split by kind.
     const freqSide = pair.filter(i => i.kind === 'frequency')
-    const writtenSide = pair.filter(i => i.kind === 'written')
+    const writtenSide = pair.filter(i => i.kind === 'written' && !i.byKeyword)
     if (!freqSide.length || !writtenSide.length) continue
     const freqAvg = avg(freqSide.map(i => i.score)) as number
     const writtenAvg = avg(writtenSide.map(i => i.score)) as number

@@ -29,7 +29,19 @@ export async function GET(
     .or(`partner_a_id.eq.${participantId},partner_b_id.eq.${participantId}`)
     .maybeSingle()
 
-  if (!couple) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!couple) {
+    // An individual (readiness-track) participant: guide recorded on their own profile.
+    const { data: solo } = await supabase
+      .from('profiles').select('id, full_name, email, guide_id').eq('id', participantId).maybeSingle()
+    if (!solo) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (solo.guide_id !== user.id && viewer?.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    const { data: soloAssessment } = await supabase
+      .from('assessments').select('*').eq('participant_id', participantId).is('couple_id', null)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+    return NextResponse.json({ couple: null, participant: solo, assessment: soloAssessment ?? null })
+  }
 
   const isAssignedGuide = couple.guide_id === user.id
   const isAdmin = viewer?.role === 'admin'

@@ -57,7 +57,7 @@ export default async function CoupleDetailPage({
   // shows the whole couple.
   const { data: namedProfile } = await supabase
     .from('profiles')
-    .select('id, full_name, email')
+    .select('id, full_name, email, guide_id')
     .eq('id', participantId)
     .maybeSingle()
 
@@ -69,7 +69,45 @@ export default async function CoupleDetailPage({
     .or(`partner_a_id.eq.${participantId},partner_b_id.eq.${participantId}`)
     .maybeSingle()
 
-  if (!couple) notFound()
+  if (!couple) {
+    // An individual (readiness-track) participant: no couple, guide recorded on their profile.
+    const soloAllowed = namedProfile.guide_id === user.id || viewer?.role === 'admin'
+    if (!soloAllowed) notFound()
+    const { data: soloAssessment } = await supabase
+      .from('assessments')
+      .select('*')
+      .eq('participant_id', participantId)
+      .is('couple_id', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const soloEffective = soloAssessment && (soloAssessment.status === 'completed' || soloAssessment.status === 'report_generated')
+      ? computeEffectiveScores(soloAssessment)
+      : null
+    return (
+      <div className="space-y-8">
+        <div>
+          <Link href="/guide/dashboard" className="text-xs" style={{ color: 'var(--gold-muted)' }}>← Dashboard</Link>
+          <p className="pillar-number tracking-widest mt-4 mb-1" style={{ color: 'var(--gold-muted)' }}>INDIVIDUAL PARTICIPANT</p>
+          <h1 className="font-display text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            {namedProfile.full_name || namedProfile.email}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-faint)' }}>
+            Readiness track · preparing for marriage, no partner in this assessment
+          </p>
+        </div>
+        <div className="max-w-xl">
+          <PartnerCard
+            label="Participant"
+            profile={namedProfile}
+            assessment={soloAssessment}
+            effective={soloEffective}
+            participantId={participantId}
+          />
+        </div>
+      </div>
+    )
+  }
 
   const isAssignedGuide = couple.guide_id === user.id
   const isAdmin = viewer?.role === 'admin'

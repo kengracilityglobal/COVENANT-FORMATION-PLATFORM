@@ -30,7 +30,7 @@ export default async function ParticipantsAdminPage({
   // cohort_id/subscription_tier on profiles (neither column exists here).
   let query = supabase
     .from('profiles')
-    .select('id, full_name, email, role, subscription_status, onboarding_completed, created_at', { count: 'exact' })
+    .select('id, full_name, email, role, guide_id, subscription_status, onboarding_completed, created_at', { count: 'exact' })
     .order('created_at', { ascending: false })
     .range((page - 1) * 25, page * 25 - 1)
   if (q) query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%`)
@@ -42,7 +42,7 @@ export default async function ParticipantsAdminPage({
     ? await Promise.all([
         supabase
           .from('couples')
-          .select('id, partner_a_id, partner_b_id, status, track')
+          .select('id, partner_a_id, partner_b_id, status, track, guide_id')
           .or(`partner_a_id.in.(${ids.join(',')}),partner_b_id.in.(${ids.join(',')})`),
         supabase
           .from('assessments')
@@ -51,6 +51,9 @@ export default async function ParticipantsAdminPage({
           .order('created_at', { ascending: false }),
       ])
     : [{ data: [] }, { data: [] }]
+
+  const { data: guides } = await supabase
+    .from('profiles').select('id, full_name, email').in('role', ['guide', 'admin']).order('full_name', { ascending: true })
 
   const coupleByParticipant = new Map<string, any>()
   for (const c of couples ?? []) {
@@ -70,6 +73,8 @@ export default async function ParticipantsAdminPage({
     return {
       ...p,
       couple_status: coupleStatus,
+      assigned_guide_id: couple ? (couple.guide_id ?? null) : (p.guide_id ?? null),
+      guide_scope: couple ? 'couple' : 'individual',
       latest_assessment: latestAssessmentByParticipant.get(p.id) ?? null,
     }
   })
@@ -96,7 +101,7 @@ export default async function ParticipantsAdminPage({
 
       <div className="space-y-2">
         {rows.map((p: any) => (
-          <ParticipantRow key={p.id} participant={p} />
+          <ParticipantRow key={p.id} participant={p} guides={guides ?? []} />
         ))}
         {rows.length === 0 && (
           <div className="eikon-card p-10 text-center">

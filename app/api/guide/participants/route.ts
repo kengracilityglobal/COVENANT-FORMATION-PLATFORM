@@ -26,7 +26,13 @@ export async function GET() {
     .eq('guide_id', user.id)
     .order('created_at', { ascending: false })
 
-  if (!couples?.length) return NextResponse.json({ couples: [] })
+  // Individual (readiness-track) participants assigned directly on their profile.
+  const { data: soloRows } = await supabase
+    .from('profiles').select('id, full_name, email').eq('guide_id', user.id)
+  const coupledIds = new Set((couples ?? []).flatMap(c => [c.partner_a_id, c.partner_b_id].filter(Boolean)))
+  const solo = (soloRows ?? []).filter(p => !coupledIds.has(p.id))
+
+  if (!couples?.length) return NextResponse.json({ couples: [], solo })
 
   const partnerIds = Array.from(
     new Set(couples.flatMap(c => [c.partner_a_id, c.partner_b_id].filter(Boolean)))
@@ -57,5 +63,5 @@ export async function GET() {
     partner_b_assessment: c.partner_b_id ? latestAssessmentByParticipant.get(c.partner_b_id) ?? null : null,
   }))
 
-  return NextResponse.json({ couples: enriched })
+  return NextResponse.json({ couples: enriched, solo })
 }

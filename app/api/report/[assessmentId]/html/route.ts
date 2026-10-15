@@ -37,7 +37,12 @@ export async function GET(
     : { data: null }
 
   const isOwner = assessment.participant_id === user.id
-  const isGuide = Boolean(couple && couple.guide_id === user.id)
+  let isGuide = Boolean(couple && couple.guide_id === user.id)
+  if (!isGuide && !assessment.couple_id) {
+    // Solo (readiness) participant: the guide is recorded on their own profile.
+    const { data: owner } = await service.from('profiles').select('guide_id').eq('id', assessment.participant_id).maybeSingle()
+    isGuide = owner?.guide_id === user.id
+  }
   const isAdmin = viewerProfile?.role === 'admin'
   if (!isOwner && !isGuide && !isAdmin) return new NextResponse('Forbidden', { status: 403 })
 

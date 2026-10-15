@@ -104,6 +104,16 @@ describe('buildReportHTML — offline report', () => {
     expect(html).not.toMatch(/<img src=x|<script>x\(\)|<b>Ada<\/b>/)
   })
 
+  it('keyword-scored (no AI) reports show no rubric lines for written answers and say how they were scored', () => {
+    const f = fixture('married', SCORES)
+    const html = buildReportHTML({ profile, assessment: { ...f.assessment, scoring_notes: '[scoring: keyword_fallback — AI scorer unavailable]' }, responses: f.responses, reportContent: [], questions: f.questions })
+    const t = visibleText(html)
+    expect(t).toMatch(/scored without AI this time/)
+    expect(t).toMatch(/In your own words/)
+    expect(t).not.toMatch(/Your written answer\./)
+    expect(t).toMatch(/simple method/)
+  })
+
   it('still renders fully when no questions are supplied (evidence panels simply absent)', () => {
     const f = fixture('married', SCORES)
     const html = buildReportHTML({ profile, assessment: f.assessment, responses: f.responses, reportContent: [] })

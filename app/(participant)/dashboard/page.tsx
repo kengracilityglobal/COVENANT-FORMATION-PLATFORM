@@ -363,7 +363,7 @@ async function SoloDashboard({ profile, supabase, userId }: { profile: any; supa
             {myStatus === 'not_started' && (
               <>
                 <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>
-                  Thirty-two questions, about twelve to fifteen minutes, with complete honesty.
+                  Forty-eight questions, about fifteen to eighteen minutes, with complete honesty.
                 </p>
                 <Link href="/assessment" className="btn-gold block text-center py-3">
                   Begin the Assessment →

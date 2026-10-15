@@ -409,6 +409,12 @@ export const CONSISTENT = "Your answers in this area were consistent from one qu
 export const FLAG_SIGNIFICANT = "There is a notable gap in {name} between how you rated yourself in general and how you answered when a real situation made the cost clear. This is not an accusation. It is the most useful signal the assessment can produce, because the general answer shows who you want to be and the specific one shows what you do under pressure. Bring it to your Guide."
 export const FLAG_MINOR = "Your answers in {name} did not fully line up: what you said about yourself in general was a little different from how you responded to a specific situation. Worth raising with your Guide."
 
+export const FLAG_KEYWORD = "Your rating and your written answer in {name} pointed different ways. Your written answers were scored by a simple method this time, one that looks at how specific and candid the writing is and not at what it says about this area, so treat this as a question to talk through and not a finding."
+
+export const FLAG_CONTRADICTION = "Two of your ratings in {name} pull against each other. {detail} That usually means one of them was answered quickly, or that this area is more mixed for you than one number can show. Worth a second look, and a good thing to raise with your Guide."
+
+export const STRAIGHTLINE_NOTE = "You gave the same answer to nearly every rating question. When that happens, the ratings tell us less about you than usual, so what you wrote, and a conversation with your Guide, deserve more weight than the numbers here."
+
 export const FLAG_DETAIL = "For example, you said \"{said}\" was {label}, while your written answer to a related question showed less of it."
 
 // Week four of the first-month plan.

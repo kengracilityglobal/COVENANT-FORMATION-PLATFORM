@@ -12,7 +12,7 @@ Plain English. No framework words (chesed, pillar, Christformed, perception
 gap...). First sentence is something they recognise. Name what it costs.
 Short sentences. The action is one specific thing, slightly uncomfortable,
 simple enough not to avoid. `npx vitest run` enforces the jargon, sentence
-length, duplication and token rules, so a bad edit fails loudly.
+length, duplication and token rules, so a bad edit fails loudly
 
 ## Tokens
 
@@ -40,3 +40,20 @@ pillar. Everything else on the page stays offline.
 
 Add text under a new id in `PATTERNS` (both `couple` and `readiness`), then
 add the rule to `detectPatterns()` and a test.
+
+## When there is no AI scorer
+
+Written answers are then scored by `keywordScoreWritten` (lib/scoring/engine.ts),
+which counts cue words ("felt", "I said", "I regret") and length. It measures how
+specific and candid the writing is, not what it says about a pillar. The report
+therefore, when `scoring_notes` contains `keyword_fallback`:
+
+- picks the "where this holds / where it slips" answers from the frequency
+  ratings only,
+- shows no rubric line for a written answer (nothing judged it against the rubric),
+- words integrity flags as "a question to talk through, not a finding",
+- still quotes the person's own words back to them, and says so plainly in the
+  opening note.
+
+Known limit: written items carry weight 1.5 against 1 for ratings, so in this
+mode about 60% of each pillar score still comes from that heuristic.

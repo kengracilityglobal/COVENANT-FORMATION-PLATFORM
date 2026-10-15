@@ -88,6 +88,10 @@ export async function GET(request: Request) {
 const patchSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(['participant', 'guide', 'admin']).optional(),
+  // Assign (uuid) or clear (null) this participant's Formation Guide. For someone in a couple the
+  // guide is the COUPLE's, so both partners get it; a solo (readiness-track) participant gets it
+  // on their own profile. Omit the key to leave the guide alone.
+  guide_id: z.string().uuid().nullable().optional(),
 })
 
 export async function PATCH(request: Request) {
@@ -97,13 +101,30 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => null)
   const parsed = patchSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 })
-  const { id, role } = parsed.data
+  const { id, role, guide_id } = parsed.data
 
-  if (role === undefined) {
+  if (role === undefined && guide_id === undefined) {
     return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
   }
 
   const supabase = await adminServiceClient()
+
+  if (guide_id !== undefined) {
+    if (guide_id !== null) {
+      const { data: g } = await supabase.from('profiles').select('role').eq('id', guide_id).maybeSingle()
+      if (!g || (g.role !== 'guide' && g.role !== 'admin')) {
+        return NextResponse.json({ error: 'That person is not a Guide. Change their role to Guide first.' }, { status: 400 })
+      }
+    }
+    const { data: couple } = await supabase
+      .from('couples').select('id')
+      .or(`partner_a_id.eq.${id},partner_b_id.eq.${id}`).maybeSingle()
+    const { error: gErr } = couple
+      ? await supabase.from('couples').update({ guide_id }).eq('id', couple.id)
+      : await supabase.from('profiles').update({ guide_id }).eq('id', id)
+    if (gErr) return NextResponse.json({ error: gErr.message }, { status: 500 })
+    if (role === undefined) return NextResponse.json({ ok: true, scope: couple ? 'couple' : 'individual', guide_id })
+  }
 
   // Guard against removing the platform's last admin.
   if (role !== 'admin') {
@@ -116,7 +137,7 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const { data, error } = await supabase.from('profiles').update({ role }).eq('id', id).select().single()
+  const { data, error } = await supabase.from('profiles').update({ role: role! }).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   return NextResponse.json({ participant: data })

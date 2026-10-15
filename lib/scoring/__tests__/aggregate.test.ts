@@ -163,3 +163,55 @@ describe('aggregate', () => {
     })
   })
 })
+
+// ── Offline (keyword-scored) written answers ─────────────────────────────────
+import { WRITTEN_WEIGHT_KEYWORD } from '../aggregate'
+
+const rated = (id: string, scale: number, reversed = false, pillar = 'conflict_repair'): ScoredItem => ({
+  responseId: `r-${id}`, questionId: id, code: id, pillar: pillar as any, kind: 'frequency',
+  score: scoreFrequency(scale, reversed), scale, reversed,
+})
+
+describe('keyword-scored written answers carry little weight', () => {
+  const freq = [rated('a', 5), rated('b', 5), rated('c', 5)]
+  it('an AI-scored written answer pulls the score strongly; a keyword-scored one barely moves it', () => {
+    const ai = aggregate([...freq, { responseId: 'w', questionId: 'w', code: 'W', pillar: 'conflict_repair', kind: 'written', score: 20 }], [])
+    const kw = aggregate([...freq, { responseId: 'w', questionId: 'w', code: 'W', pillar: 'conflict_repair', kind: 'written', score: 20, byKeyword: true }], [])
+    expect(ai.pillar_scores.conflict_repair).toBe(73)          // (300 + 20*1.5) / 4.5
+    expect(kw.pillar_scores.conflict_repair).toBe(94)          // (300 + 20*0.25) / 3.25
+    expect(WRITTEN_WEIGHT_KEYWORD).toBeLessThan(0.5)
+  })
+  it('a keyword-scored answer is never used to flag a rating as inflated', () => {
+    const kw = aggregate([...freq, { responseId: 'w', questionId: 'w', code: 'W', pillar: 'conflict_repair', kind: 'written', score: 10, byKeyword: true }], [])
+    expect(kw.integrity_flags.conflict_repair).toBe('none')
+    const ai = aggregate([...freq, { responseId: 'w', questionId: 'w', code: 'W', pillar: 'conflict_repair', kind: 'written', score: 10 }], [])
+    expect(ai.integrity_flags.conflict_repair).toBe('significant')
+  })
+})
+
+describe('contradictory ratings (positive and reverse-worded statements)', () => {
+  it('flags tapping "Almost always" all the way down: agreeing with both a statement and its opposite', () => {
+    const r = aggregate([rated('a', 5), rated('b', 5), rated('c', 5), rated('d', 5, true), rated('e', 5, true)], [])
+    expect(r.integrity_flags.conflict_repair).toBe('significant')
+    expect(Object.values(r.flags_by_response).flat()).toContain('contradictory_ratings')
+  })
+  it('flags the same pattern at the other end: disagreeing with both', () => {
+    const r = aggregate([rated('a', 1), rated('b', 1), rated('c', 1), rated('d', 1, true), rated('e', 1, true)], [])
+    expect(r.integrity_flags.conflict_repair).toBe('significant')
+  })
+  it('does not flag a consistent person, good or poor', () => {
+    const good = aggregate([rated('a', 5), rated('b', 4), rated('c', 5), rated('d', 1, true), rated('e', 2, true)], [])
+    const poor = aggregate([rated('a', 1), rated('b', 2), rated('c', 1), rated('d', 5, true), rated('e', 4, true)], [])
+    expect(good.integrity_flags.conflict_repair).toBe('none')
+    expect(poor.integrity_flags.conflict_repair).toBe('none')
+    expect(good.pillar_scores.conflict_repair).toBeGreaterThan(85)
+    expect(poor.pillar_scores.conflict_repair).toBeLessThan(15)
+  })
+  it('does not flag neutral answers, and flags a single clash only as minor', () => {
+    expect(aggregate([rated('a', 3), rated('b', 3), rated('d', 3, true)], []).integrity_flags.conflict_repair).toBe('none')
+    expect(aggregate([rated('a', 5), rated('b', 5), rated('d', 5, true), rated('e', 1, true)], []).integrity_flags.conflict_repair).toBe('minor')
+  })
+  it('does nothing when an area has no reverse-worded item to cross-check against', () => {
+    expect(aggregate([rated('a', 5), rated('b', 5), rated('c', 5)], []).integrity_flags.conflict_repair).toBe('none')
+  })
+})
