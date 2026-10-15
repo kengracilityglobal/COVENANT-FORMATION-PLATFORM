@@ -617,6 +617,7 @@ minute figure scales the original estimate by the rated questions added; time
 a real run, because the original 50-question estimate counted 16 scenario and 9
 reflective questions that each need real writing.
 
+<<<<<<< HEAD
 ## v1.4: guides for individuals, assign-guide control, demo data
 
 - **Guides could only be attached to couples**, so a readiness-track
@@ -647,6 +648,8 @@ Supabase auth schema (they are inserted straight into `auth.users`, which my
 test database only imitates), and the new admin and guide screens in a
 browser.
 
+=======
+>>>>>>> 92dbf500382cb22ca4794dff1c2f54aa2b172f74
 ## Architecture notes worth knowing before deploying
 
 - **Dyadic Perception Gap is never stored** — `computeCoupleGap()`
