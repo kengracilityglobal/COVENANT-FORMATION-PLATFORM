@@ -6,13 +6,30 @@ Everything in a report that does not need an AI key is built by two files:
 - `lib/report/offline-portrait.ts` chooses between finished pieces and adds the
   person's own evidence. It never builds sentences from fragments.
 
+## Depth layers (taster and full report)
+
+Each area shows the short authored portrait, then two more paragraphs written
+by hand for every area at every level, in `lib/report/offline-depth.ts`:
+
+| Layer | What it says |
+|---|---|
+| `UNDERNEATH` | What usually sits beneath the portrait. The root, told with grace. Written once for every family, so it never names a spouse, partner or marriage. |
+| `AHEAD_COUPLE` / `AHEAD_READINESS` | What the next season looks like. Couple copy uses the `{sp}` `{Sp}` `{mar}` tokens. Readiness copy is written separately for a single reader. |
+| `LEAN` | One sentence on where the score sits in its level (lower or upper third), for every family. Skipped when the edge note already speaks. |
+
+The engine returns these as `depth` on each pillar portrait. The taster shows
+them for its free areas, because the taster decides whether someone goes on.
+The full report shows them for every area, but only when the portrait came from
+the engine: an AI portrait or an admin edited row is left alone. Same wording
+rules as everything else, plus no hyphens or dashes. The tests enforce it.
+
 ## Voice rules (same as the AI portrait prompt)
 
 Plain English. No framework words (chesed, pillar, Christformed, perception
 gap...). First sentence is something they recognise. Name what it costs.
 Short sentences. The action is one specific thing, slightly uncomfortable,
 simple enough not to avoid. `npx vitest run` enforces the jargon, sentence
-length, duplication and token rules, so a bad edit fails loudly
+length, duplication and token rules, so a bad edit fails loudly.
 
 ## Tokens
 

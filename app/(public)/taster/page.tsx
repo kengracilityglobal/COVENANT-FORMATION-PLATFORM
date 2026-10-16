@@ -248,6 +248,21 @@ export default function TasterPage() {
                   </p>
                 )}
 
+                <div className="mb-6 space-y-6">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest mb-3 font-bold" style={{ color: 'var(--text-faint)' }}>
+                      What usually sits underneath
+                    </p>
+                    <p className="formation-prose text-base" style={{ lineHeight: '1.9' }}>{out.depth.underneath}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-widest mb-3 font-bold" style={{ color: 'var(--text-faint)' }}>
+                      What the next season looks like
+                    </p>
+                    <p className="formation-prose text-base" style={{ lineHeight: '1.9' }}>{out.depth.ahead}</p>
+                  </div>
+                </div>
+
                 {rows.length > 0 && (
                   <div className="mb-6 px-5 pt-4 pb-1" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--bg-border)' }}>
                     <p className="text-xs uppercase tracking-widest font-bold mb-2" style={{ color: 'var(--text-faint)' }}>

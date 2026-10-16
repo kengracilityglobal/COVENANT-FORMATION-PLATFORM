@@ -119,7 +119,6 @@ Running each file as its own SQL editor execution avoids this entirely.
    premarital bank. Before this the premarital track could be chosen at
    onboarding but had no questions.
 
-<<<<<<< HEAD
 10. `supabase/migrations/010_guide_for_solo_participants.sql` — lets a
     Formation Guide be assigned to an individual (readiness-track)
     participant, who has no couple. Uses the existing `profiles.guide_id`.
@@ -150,12 +149,6 @@ part of this build — see `docs/VERIFICATION.md` (v1.3).
   finished assessments and reports. Password and the full list are in
   `supabase/demo/README.md`. `002_remove_demo_data.sql` removes it all.
   Regenerate with `npx tsx scripts/generate-demo-seed.ts`.
-=======
-Run each file as its own query. 007–009 are additive and safe to re-run.
-All nine were applied in order to a real Postgres 16, each file in a
-single transaction (which is how the Supabase SQL editor runs them), as
-part of this build — see `docs/VERIFICATION.md` (v1.3).
->>>>>>> 92dbf500382cb22ca4794dff1c2f54aa2b172f74
 
 ## 4. Supabase Auth configuration
 

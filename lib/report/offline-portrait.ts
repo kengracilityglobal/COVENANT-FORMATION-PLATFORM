@@ -23,6 +23,7 @@ import {
   GAP_LINES, GAP_ALIGNED_STRONG, GAP_ALIGNED_MID, PATTERNS, OVERALL_OPENING,
   NEAR_NEXT, NEAR_PREV, CONSISTENT, FLAG_SIGNIFICANT, FLAG_MINOR, FLAG_DETAIL, FLAG_KEYWORD, FLAG_CONTRADICTION, STRAIGHTLINE_NOTE, WEEK_FOUR,
 } from './offline-content'
+import { UNDERNEATH, AHEAD_COUPLE, AHEAD_READINESS, LEAN } from './offline-depth'
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -69,8 +70,20 @@ export interface PillarEvidence {
   answered: number
 }
 
+/**
+ * Two more authored paragraphs under the short portrait. Both the taster (for
+ * its free areas) and the full report render them.
+ */
+export interface PillarDepth {
+  /** What usually sits beneath what the portrait describes. */
+  underneath: string
+  /** Where the score sits in its level, then what the next season looks like. */
+  ahead: string
+}
+
 export interface PillarPortrait {
   portrait: string
+  depth: PillarDepth
   action: string
   evidence: PillarEvidence
   flagText: string
@@ -308,6 +321,33 @@ function positionNote(score: number, descriptor: FormationDescriptor): string {
   return ''
 }
 
+/**
+ * Where the score sits inside its level. Only the lower or upper third speaks,
+ * and only when positionNote() has not already said something about an edge,
+ * so the two never repeat each other.
+ */
+function leanNote(pillar: CorePillar, score: number, descriptor: FormationDescriptor): string {
+  if (positionNote(score, descriptor)) return ''
+  const idx = DESCRIPTOR_BANDS.findIndex(b => b.descriptor === descriptor)
+  if (idx < 0) return ''
+  const lower = DESCRIPTOR_BANDS[idx].min
+  const upper = idx === 0 ? 100 : DESCRIPTOR_BANDS[idx - 1].min - 1
+  const pos = (Math.round(score) - lower) / (upper - lower + 1)
+  if (pos < 1 / 3) return LEAN[pillar][descriptor].low
+  if (pos >= 2 / 3) return LEAN[pillar][descriptor].high
+  return ''
+}
+
+export function buildDepth(
+  pillar: CorePillar, track: string | null | undefined, score: number, descriptor: FormationDescriptor,
+): PillarDepth {
+  const aheadBank = copyFor(track) === 'readiness' ? AHEAD_READINESS : AHEAD_COUPLE
+  return {
+    underneath: fillTokens(UNDERNEATH[pillar][descriptor], track),
+    ahead: fillTokens([leanNote(pillar, score, descriptor), aheadBank[pillar][descriptor]].filter(Boolean).join(' '), track),
+  }
+}
+
 // ── The pillar portrait ────────────────────────────────────────────────
 
 export interface PillarPortraitInput {
@@ -337,6 +377,7 @@ export function buildPillarPortrait(input: PillarPortraitInput): PillarPortrait 
 
   return {
     portrait: fillTokens([base, note].filter(Boolean).join(' '), track),
+    depth: buildDepth(pillar, track, score, descriptor),
     action: fillTokens(actionBank[pillar][descriptor], track),
     evidence,
     flagText: flagText(pillar, input.integrityFlag, input.responses, input.questions, input.writtenByKeyword),

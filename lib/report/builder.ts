@@ -109,6 +109,24 @@ export function buildReportHTML({
     return pillarPortraits[pillar].portrait
   }
 
+  /**
+   * The two extra layers under the short portrait. Only when the portrait came
+   * from the offline engine: an AI portrait or an admin edited row is already
+   * the author's whole say for this area, so nothing is stacked on it.
+   */
+  function depthBlock(pillar: CorePillar, descriptor: string): string {
+    if (aiPortraits?.[pillar]?.portrait) return ''
+    if (getContent(`portrait_${pillar}_${descriptor}`)) return ''
+    const d = pillarPortraits[pillar].depth
+    const label = (t: string) => `<p style="font-family:Georgia; font-size:9px; font-weight:700; color:#3D3325; letter-spacing:0.25em; text-transform:uppercase; margin:0 0 10px;">${t}</p>`
+    const para = (t: string) => `<p style="font-family:Georgia; font-size:14.5px; line-height:1.9; color:#C4A96A; margin:0 0 18px; text-align:justify;">${esc(t)}</p>`
+    return `
+        ${label('What usually sits underneath')}
+        ${para(d.underneath)}
+        ${label('What the next season looks like')}
+        ${para(d.ahead)}`
+  }
+
   function getInvitation(pillar: CorePillar): string {
     return aiPortraits?.[pillar]?.invitation || pillarPortraits[pillar].action
   }
@@ -266,6 +284,8 @@ export function buildReportHTML({
         <p style="font-family:Georgia; font-size:14.5px; line-height:1.9; color:#C4A96A; margin:0 0 18px; text-align:justify;">
           ${esc(portrait)}
         </p>
+
+        ${depthBlock(pillar, descriptor)}
 
         ${evidenceBlock(pillar)}
 

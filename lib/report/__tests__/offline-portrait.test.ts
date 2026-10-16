@@ -3,6 +3,7 @@ import { CORE_PILLARS } from '@/lib/scoring/aggregate'
 import {
   COUPLE_PORTRAIT, COUPLE_ACTION, READINESS_PORTRAIT, READINESS_ACTION, GAP_LINES, PATTERNS, OVERALL_OPENING,
 } from '../offline-content'
+import { UNDERNEATH, AHEAD_COUPLE, AHEAD_READINESS, LEAN } from '../offline-depth'
 import {
   buildPillarPortrait, buildEvidence, buildOverview, buildFirstMonth, detectPatterns, readGap,
   fillTokens, excerptFrom, escapeHtml, type QuestionLite, type ResponseLite,
@@ -16,9 +17,16 @@ function allStrings(): Array<{ where: string; text: string; copy: 'couple' | 're
   const banks: Array<[string, any, 'couple' | 'readiness']> = [
     ['COUPLE_PORTRAIT', COUPLE_PORTRAIT, 'couple'], ['COUPLE_ACTION', COUPLE_ACTION, 'couple'],
     ['READINESS_PORTRAIT', READINESS_PORTRAIT, 'readiness'], ['READINESS_ACTION', READINESS_ACTION, 'readiness'],
+    ['AHEAD_COUPLE', AHEAD_COUPLE, 'couple'], ['AHEAD_READINESS', AHEAD_READINESS, 'readiness'],
+    // Written once for both families, so held to the stricter readiness rule here
+    // and to the couple rule in its own test below.
+    ['UNDERNEATH', UNDERNEATH, 'readiness'],
   ]
   for (const [name, bank, copy] of banks) {
     for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) out.push({ where: `${name}.${p}.${d}`, text: bank[p][d], copy })
+  }
+  for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) {
+    out.push({ where: `LEAN.${p}.${d}.low`, text: LEAN[p][d].low, copy: 'readiness' }, { where: `LEAN.${p}.${d}.high`, text: LEAN[p][d].high, copy: 'readiness' })
   }
   for (const p of CORE_PILLARS) for (const k of ['youHigher', 'otherHigher', 'bothLow'] as const) out.push({ where: `GAP.${p}.${k}`, text: GAP_LINES[p][k], copy: 'couple' })
   for (const [id, t] of Object.entries(PATTERNS)) { out.push({ where: `PATTERN.${id}.couple`, text: t.couple, copy: 'couple' }); out.push({ where: `PATTERN.${id}.readiness`, text: t.readiness, copy: 'readiness' }) }
@@ -319,5 +327,77 @@ describe('contradictory-rating flags and straight-lining', () => {
     expect(many([5, 4, 3, 2, 1, 5, 4, 3, 2, 1, 5, 4])).toBe('')
     expect(many([5, 5, 5, 5])).toBe('')
     expect(straightliningNote(undefined, undefined)).toBe('')
+  })
+})
+
+describe('the taster and the full report carry more than the short paragraph', () => {
+  const track = ['married', 'premarital', 'readiness'] as const
+
+  it('has a real underneath and ahead paragraph for every area, level and family', () => {
+    for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) {
+      expect(UNDERNEATH[p][d].length, `UNDERNEATH.${p}.${d}`).toBeGreaterThan(200)
+      expect(AHEAD_COUPLE[p][d].length, `AHEAD_COUPLE.${p}.${d}`).toBeGreaterThan(180)
+      expect(AHEAD_READINESS[p][d].length, `AHEAD_READINESS.${p}.${d}`).toBeGreaterThan(160)
+      expect(LEAN[p][d].low.length).toBeGreaterThan(40)
+      expect(LEAN[p][d].high.length).toBeGreaterThan(40)
+    }
+  })
+
+  it('shared copy never names a spouse or a marriage, so it reads right for every family', () => {
+    for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) {
+      for (const t of [UNDERNEATH[p][d], LEAN[p][d].low, LEAN[p][d].high]) expect(t, `${p}.${d}`).not.toMatch(/spouse|marriage|\bpartner\b|\{/i)
+    }
+  })
+
+  it('uses no hyphens or dashes in the new authored wording', () => {
+    const all = [UNDERNEATH, AHEAD_COUPLE, AHEAD_READINESS].flatMap(b => CORE_PILLARS.flatMap(p => DESCRIPTORS.map(d => b[p][d])))
+    for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) all.push(LEAN[p][d].low, LEAN[p][d].high)
+    for (const t of all) expect(t).not.toMatch(/[-\u2013\u2014]/)
+  })
+
+  it('resolves every token and never leaks a spouse into readiness depth', () => {
+    for (const tr of track) for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) {
+      const v = buildPillarPortrait({ pillar: p, track: tr, score: 60, descriptor: d })
+      for (const t of [v.depth.underneath, v.depth.ahead]) {
+        expect(t, `${tr}.${p}.${d}`).not.toMatch(/\{[a-zA-Z]+\}/)
+        if (tr === 'readiness') expect(t, `${tr}.${p}.${d}`).not.toMatch(/your spouse|your marriage|your partner/i)
+      }
+    }
+  })
+
+  it('uses partner wording for premarital and spouse wording for married', () => {
+    const m = buildPillarPortrait({ pillar: 'oneness', track: 'married', score: 60, descriptor: 'awakening' })
+    const pm = buildPillarPortrait({ pillar: 'oneness', track: 'premarital', score: 60, descriptor: 'awakening' })
+    expect(m.depth.ahead).toMatch(/your spouse/)
+    expect(pm.depth.ahead).toMatch(/your partner/)
+  })
+
+  it('keeps the short portrait untouched and adds depth beside it', () => {
+    const v = buildPillarPortrait({ pillar: 'conflict_repair', track: 'married', score: 60, descriptor: 'growing' })
+    expect(v.portrait).toBe(fillTokens(COUPLE_PORTRAIT.conflict_repair.growing, 'married'))
+    expect(v.depth.underneath).toBe(UNDERNEATH.conflict_repair.growing)
+  })
+
+  it('differs by area, level and family, with no paragraph repeated', () => {
+    const seen = new Set<string>()
+    for (const tr of ['married', 'readiness'] as const) for (const p of CORE_PILLARS) for (const d of DESCRIPTORS) {
+      const v = buildPillarPortrait({ pillar: p, track: tr, score: 60, descriptor: d })
+      for (const t of [v.portrait, v.depth.ahead, ...(tr === 'married' ? [v.depth.underneath] : [])]) {
+        expect(seen.has(t), `${tr}.${p}.${d} repeats a paragraph`).toBe(false)
+        seen.add(t)
+      }
+    }
+  })
+
+  it('says where the score sits in its level, only in the outer thirds, and not twice at an edge', () => {
+    const low = buildPillarPortrait({ pillar: 'intimacy', track: 'readiness', score: 54, descriptor: 'growing' })
+    expect(low.depth.ahead.startsWith(LEAN.intimacy.growing.low)).toBe(true)
+    const high = buildPillarPortrait({ pillar: 'intimacy', track: 'readiness', score: 65, descriptor: 'growing' })
+    expect(high.depth.ahead.startsWith(LEAN.intimacy.growing.high)).toBe(true)
+    const mid = buildPillarPortrait({ pillar: 'intimacy', track: 'readiness', score: 59, descriptor: 'growing' })
+    expect(mid.depth.ahead).toBe(AHEAD_READINESS.intimacy.growing)
+    const edge = buildPillarPortrait({ pillar: 'intimacy', track: 'readiness', score: 68, descriptor: 'growing' })
+    expect(edge.portrait).toMatch(/2 points from the next level up/)
+    expect(edge.depth.ahead).toBe(AHEAD_READINESS.intimacy.growing)
   })
 })
